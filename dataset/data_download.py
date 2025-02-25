@@ -20,7 +20,7 @@ def type_download(refer, source_type, save_path):
             ydl.download([PREFIX + refer])
     except yt_dlp.utils.DownloadError as e:
         # 三种youtube视频源丢失的报错
-        if not 'unavailable' in str(e) and not 'Private' in str(e) and not 'terminated' in str(e):
+        if not 'unavailable' in str(e) and not 'Private' in str(e) and not 'terminated' in str(e) and not 'age' in str(e) and not 'removed' in str(e):
             if source_type == 'video+audio':
                 ret = subprocess.call(
                     'yt-dlp --format bestvideo+bestaudio ' + PREFIX + refer + ' -o ' + save_path + ' -R 50')
@@ -146,15 +146,28 @@ if __name__ == "__main__":
     skip_list = [
         # Unavailable
         "Q595wIHZ1aA", "e4tFnhEmwRM", "anr4W-UEvOM", "C0WhoTm9qrE", "WFtV4rV_ARg", "pYcVzxzpZgM", "d0Kn7Rt1D0U",
-        "MntLqxO53Ls",
+        "MntLqxO53Ls", "oDs05I0NyR8", "BGKk5HmKZ5I", "oV2kjFLrXrw", "ZZBxws6iEFE", "Ssz7Zf8VQEs", "iNRhe7lHlr4",
+        "qHfWmdvEYB0", "R2Zri26D3Nw", "i4uX2KlyGs8", "8rJJHvKNy3A", "p2tEpmT6fOA", "lg6CcvPc8o4", "0jMp51s9CqY",
+        "D2nYM3Q3WU4", "okmbII6BPNY", "UwIt_Ny63gI", "WVNCfFJcQGs", "5zSSMjYMYFM", "-EBKPJH5pGI", "IPjAr1aKgEE",
+        "RCPgYpsxClI", "v9GJojs46u0", "UIjS4TY197I", "KZ0YiFQjN9w", "GT_SEXX8jdw", "MbjzpyXSDFk", "eUZbGJBCstg",
+        "x2c4RhlxMKo", "PakzukYqlKY", "0dpmQTU29go", "DKivVNCjOE4", "99xWswuND0o",
         # Private
-        "WKB2mKTQo24",
+        "WKB2mKTQo24", "nNGUKSD3j_s", "YcAqgVarvsM", "1RfQmpM4nkc", "CUoitqAxsOo", "d4VQV0Hr8w8", "zc9UWW6cX8M",
+        "1RfQmpM4nkc", "LPjYqoSkUi0", "4ReLtzwQrY8", "1buEFjm0X2I", "002CTRIvZOI", "yD_aRo8Prdw", "xrHMonjyNs0",
+        "OEES9_UMOo4", "mG8Q9HrgYMs", "HiHQfrJYxu4", "7Jcz763W1M4", "dFXdNJYK3ds", "S-EtZ6iG5LU", "nVTgLroGK_U",
+        "4vZQ8KWA0QE", "BS69gdubk-o", "flVUzFKBcGs", "MqJt2-_na3g", "EtDB5NrtmWg", "l59IhXoJDpY", "Vu48LYFflOU",
+        "iYNDBZBjFtM", "gnPNGEn_DRU", "jSv0FIVspRA", "vEV9P4Q3x_Q",
         # Broken
+        "-9FE-Gs40tc", "-sUhkJcjxYQ", "OWf_S_LhV34",
         # 裁剪时间超出范围或无效
-        'TGGI_jsmzN0', 'wob3xMIqMHU', "nK_A8_HTa-4", "hJcm64kAVOo", "UWH8RWYln0I",
+        'TGGI_jsmzN0', 'wob3xMIqMHU', "nK_A8_HTa-4", "hJcm64kAVOo", "UWH8RWYln0I", "0kClu-uz7aA", "JfWu_gqhp0I",
+        "KzJbe547lZk", "W4AppJDCmOk", "JZEb3jKhIu8", "TjPJ5A2rLn8", "oCkNImUpu4w", "El8FU2McyMY", "CrtrvKHWrh4",
+        "ahqH_jdyNF8", "8NFWFaAEQ9I", "puPSMmttimg", "g316YN9RX6U", "jD_I6KsCZus", "KfN1xztUHhY", "HORGyUit_mY",
+        "DaPVmpjuJKw", "XghkJ6-bN7M",
         # 发生错误: 'video_fps'
+        "RfCPnOwMYaI",
     ]
     labels, _ = download_dataset_parallel(dataset,
-                                          start=1000, max_data_number=1150,
+                                          max_data_number=1200,
                                           skip_list=skip_list, num_workers=2)
-    json.dump(labels, open("./labels/index.json", "w"))
+    json.dump(labels, open("labels/index.json", "w"))

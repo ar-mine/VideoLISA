@@ -145,15 +145,16 @@ if __name__ == "__main__":
 
     skip_list = [
         # Unavailable
-        "Q595wIHZ1aA", "e4tFnhEmwRM",
+        "Q595wIHZ1aA", "e4tFnhEmwRM", "anr4W-UEvOM", "C0WhoTm9qrE", "WFtV4rV_ARg", "pYcVzxzpZgM", "d0Kn7Rt1D0U",
+        "MntLqxO53Ls",
         # Private
         "WKB2mKTQo24",
         # Broken
         # 裁剪时间超出范围或无效
-        'TGGI_jsmzN0', 'wob3xMIqMHU'
+        'TGGI_jsmzN0', 'wob3xMIqMHU', "nK_A8_HTa-4", "hJcm64kAVOo", "UWH8RWYln0I",
         # 发生错误: 'video_fps'
     ]
     labels, _ = download_dataset_parallel(dataset,
-                                          start=1000, max_data_number=1100,
+                                          start=1000, max_data_number=1150,
                                           skip_list=skip_list, num_workers=2)
     json.dump(labels, open("./labels/index.json", "w"))

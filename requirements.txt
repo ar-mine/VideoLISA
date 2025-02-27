@@ -1,4 +1,9 @@
+# torch
 moviepy==1.0.3
 numpy<2
 yt-dlp
 ffmpeg-python
+transformers
+peft
+flash-attn
+decord

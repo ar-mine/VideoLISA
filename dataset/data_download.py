@@ -86,7 +86,7 @@ def trim_video(input_path, output_path, start_time, end_time):
         trimmed_video = video.subclip(start_time, end_time)
 
         # 保存裁剪后的视频（可通过logger=None关闭进度条）
-        trimmed_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+        trimmed_video.write_videofile(output_path, codec="libx264", fps=30, audio_codec="aac", logger=None)
 
         print(f"视频已成功裁剪并保存到 {output_path}")
         return TRIM_SUCCESS
@@ -168,38 +168,11 @@ if __name__ == "__main__":
         # 其它可选参数根据需求添加
     }
 
-    skip_list = [
-        # DOWNLOAD_ERROR_TRANSIENT
-        'ZZBxws6iEFE', 'Ssz7Zf8VQEs', 'zc9UWW6cX8M', 'p2tEpmT6fOA', 'iNRhe7lHlr4', 'R2Zri26D3Nw', 'i4uX2KlyGs8',
-        '8rJJHvKNy3A', 'lg6CcvPc8o4', 'D2nYM3Q3WU4', 'okmbII6BPNY', 'WVNCfFJcQGs', '5zSSMjYMYFM', 'IPjAr1aKgEE',
-        'nVTgLroGK_U', 'UIjS4TY197I', 'RCPgYpsxClI', 'v9GJojs46u0', 'GT_SEXX8jdw', 'MbjzpyXSDFk', 'x2c4RhlxMKo',
-        'PakzukYqlKY', '0dpmQTU29go', 'DKivVNCjOE4', '99xWswuND0o', 'Q595wIHZ1aA', 'e4tFnhEmwRM', 'anr4W-UEvOM',
-        'WFtV4rV_ARg', 'pYcVzxzpZgM', 'd0Kn7Rt1D0U', 'MntLqxO53Ls', 'oDs05I0NyR8', 'BGKk5HmKZ5I', 'nl6IrjZzSt0',
-        'dks0koqKOaA', 'Lhp96fthmIc', 'u93kgT-uAIA', 'QAmQ7MpTsTw', 'gEO-sTgwdl8', '4fLkr-4gTEQ', 'D_zs9VxCfd4',
-        'ySJ0RCzXLOQ', 'MYN3QPEkFOs', 'MC_YBvWP9vc', 'et7xveZ5nqs', '720B0332K74', 'ycA_hdiF79c', '8hY-9YgU4-Y',
-        'qFLQ-r-qW7c', 'FATGIiF3LWY', 'wefa7sGS_kg', 'LGHzfNJWBlA', 'OISjWi_Jmvo', 'jDMYuXiTs04', 'PUImat87F74',
-        'WHxP6LQnd3M', 'rQjljdIi9Pg', 'UDr1IVAbPlo',
-        # DOWNLOAD_ERROR_AUTH
-        'oV2kjFLrXrw', 'CUoitqAxsOo', 'd4VQV0Hr8w8', '1RfQmpM4nkc', 'LPjYqoSkUi0', 'qHfWmdvEYB0', '4ReLtzwQrY8',
-        '1buEFjm0X2I', '0jMp51s9CqY', 'UwIt_Ny63gI', '002CTRIvZOI', 'yD_aRo8Prdw', 'xrHMonjyNs0', 'OEES9_UMOo4',
-        '7Jcz763W1M4', 'HiHQfrJYxu4', 'dFXdNJYK3ds', 'S-EtZ6iG5LU', 'KZ0YiFQjN9w', '4vZQ8KWA0QE', 'BS69gdubk-o',
-        'flVUzFKBcGs', 'MqJt2-_na3g', 'EtDB5NrtmWg', 'Vu48LYFflOU', 'l59IhXoJDpY', 'iYNDBZBjFtM', 'gnPNGEn_DRU',
-        'jSv0FIVspRA', 'vEV9P4Q3x_Q', 'WKB2mKTQo24', 'YcAqgVarvsM', 'U2oQcqvkCCk', '_JUgKIy_0Ys', 'Xz74m4cAosg',
-        'qaibFRRbEO4', 'hT-VFY4exGM', 'tIvqIcko4R4', 'JlPcZGjXwHQ', 'oweXrPnj-Ic', 'fOIR0BU6QiU', '_lfLYKk3bvI',
-        'EXMEuOWNzEk', 'aABM8x9B4D4', 'Tl1tA1-nlHI', 'xMTsW_Q0IwE', 'V9xAOc9pBvE', 'h9vNMuje1uY', '2KUe96v06os',
-        'KlZ7P4DUL5w', 'WHwNCqy_LHY', 'ZP8V_j7C2Ws', 'Bp3nzbaOj3A', 'aZz8Hh_EsEI', 'n3KPxcihUQ8', 'xPU_4RnjiDo',
-        'EA5EZr6h1lc', 'zRz5bKPbgKg',
-        # DOWNLOAD_ERROR_EXIST
-        # TRIM_ERROR_INVALID_TIME
-        'JfWu_gqhp0I', 'KzJbe547lZk', '-EBKPJH5pGI', 'W4AppJDCmOk', 'JZEb3jKhIu8', 'g316YN9RX6U', 'TjPJ5A2rLn8',
-        'oCkNImUpu4w', 'El8FU2McyMY', 'CrtrvKHWrh4', '8NFWFaAEQ9I', 'ahqH_jdyNF8', 'puPSMmttimg', 'XghkJ6-bN7M',
-        'jD_I6KsCZus', 'KfN1xztUHhY', 'DaPVmpjuJKw', 'HORGyUit_mY', 'TGGI_jsmzN0', 'wob3xMIqMHU', 'nK_A8_HTa-4',
-        'hJcm64kAVOo', 'UWH8RWYln0I', '0kClu-uz7aA', 'NRZ7bZi3Q-o', '832YsbRqxeU', 'YDfZWud2-84',
-        # TRIM_ERROR_EXCEPTION
-        '-9FE-Gs40tc', 'RfCPnOwMYaI', '-sUhkJcjxYQ', 'tLKVaizPItA', '-qKhLrUziCQ', 'L6FuZtM9LeI',
-    ]
-    MAX_DATA_NUM = 3000
+    skip_list = json.load(open("./skips/skip-list-20000.json"))["data"]
+    START = 10000
+    MAX_DATA_NUM = 20000
     labels, _ = download_dataset_parallel(dataset,
+                                          start=START,
                                           max_data_number=MAX_DATA_NUM,
                                           skip_list=skip_list, num_workers=2)
     data_len = len(labels)

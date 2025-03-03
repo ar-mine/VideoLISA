@@ -1,5 +1,6 @@
-# torch
+# torch # Any version > 2.0
 moviepy==1.0.3
+decorator==4.0.2 # 4.4.2 is not compatible with moviepy
 numpy<2
 yt-dlp
 ffmpeg-python
@@ -7,3 +8,4 @@ transformers
 peft
 flash-attn
 decord
+datasets

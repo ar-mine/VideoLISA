@@ -78,8 +78,8 @@ if __name__ == "__main__":
 
     for data in test_dataset[:MAX_TEST_SAMPLES]:
         video_id = data["id"]
-        # video_path = f"{SAVE_PATH}/{video_id}/{video_id}_vtime.mp4"
-        video_path = "./1.mp4"
+        video_path = f"{SAVE_PATH}/{video_id}/{video_id}_vtime.mp4"
+        # video_path = "./1.mp4"
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": [
@@ -89,9 +89,10 @@ if __name__ == "__main__":
             ]
              },
         ]
-        {'role': 'assistant', 'content': 'From 0.0 to 1.5499357142857142, a coffee maker and a cup on a table. '
-        'From 1.5499357142857142 to 3.6165166666666666, a person is pointing to a coffee maker and a mug. '
-        'From 3.6165166666666666 to 5.6830976190476195, a coffee maker and a cup sitting on top of a table.'}
+        "{'role': 'assistant', 'content': 'From 5.043243243243244 to 5.547567567567568.'}"
+        # {'role': 'assistant', 'content': 'From 0.0 to 1.5499357142857142, a coffee maker and a cup on a table. '
+        # 'From 1.5499357142857142 to 3.6165166666666666, a person is pointing to a coffee maker and a mug. '
+        # 'From 3.6165166666666666 to 5.6830976190476195, a coffee maker and a cup sitting on top of a table.'}
         response = predict(processor, messages, val_peft_model)
         messages.append({"role": "assistant", "content": f"{response}"})
         print(messages[-1])

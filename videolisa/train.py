@@ -1,29 +1,28 @@
-import json
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
-from qwen_vl_utils import process_vision_info
-import torch
 import os
+from dataclasses import dataclass, field
+import torch
 import numpy as np
+
 from qwen_vl_utils import fetch_video
-from peft import LoraConfig, TaskType, get_peft_model, PeftModel
+from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
 from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForSeq2Seq,
+    HfArgumentParser
 )
-from peft import LoraConfig, TaskType, get_peft_model, PeftModel
+from peft import LoraConfig, TaskType, get_peft_model
 from datasets import load_dataset
 
-SAVE_PATH = "/media/automan/6E94666294662CB1/A_Content/Youtube/videos"
 
-def process_func(sample):
+def process_func(sample, processor, tokenizer, max_frames, data_root):
     sample_id = sample['id']
-    video_path = os.path.join(SAVE_PATH, sample_id)
+    video_path = os.path.join(data_root, sample_id)
 
     """ Fetch clip videos file """
     clip_video_path = os.path.join(video_path, '{}_vtime.mp4'.format(sample_id))
     video_input, video_sample_fps = fetch_video({"video": clip_video_path,
-                                                 "max_frames": 12},
+                                                 "max_frames": max_frames},
                                                 return_video_sample_fps=True)
     # print(f"Frames shape: {video_input.shape}, FPS: {video_sample_fps}")
 
@@ -94,57 +93,70 @@ def process_func(sample):
     return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels,
             "pixel_values_videos": pixel_values_videos, "video_grid_thw": video_grid_thw}
 
-model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
-model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-    model_path,
-    torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
-    device_map="auto"
-)
-tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
-processor = AutoProcessor.from_pretrained(model_path)
-model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
+@dataclass
+class ModelArguments:
+    model_name_or_path: str = field()
+    attn_implementation: str = field()
 
-# 使用示例：
-# 假设 labels 是一个包含所有样本字典的列表
-train_ds = load_dataset("json", data_files="index.json", split="train", streaming=True)
-train_dataset = train_ds.map(process_func)
+    target_modules: list[str] = field()
+    lora_r: int = field()
+    lora_alpha: int = field()
+    lora_dropout: float = field()
 
-# 配置LoRA
-config = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    inference_mode=False,  # 训练模式
-    r=64,  # Lora 秩
-    lora_alpha=16,  # Lora alaph，具体作用参见 Lora 原理
-    lora_dropout=0.05,  # Dropout 比例
-    bias="none",
-)
+@dataclass
+class ScriptArguments:
+    max_frames: int = field(
+        metadata={'help': 'Max number of frames to process'},
+    )
+    data_root: str = field()
+    dataset_path: str = field()
 
-# 获取LoRA模型
-peft_model = get_peft_model(model, config)
 
-# 配置训练参数
-args = TrainingArguments(
-    output_dir="./output/Qwen2_5-VL-3B",
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=10,
-    logging_steps=50,
-    max_steps=500,
-    num_train_epochs=5,  # 设置为你期望的 epoch 数
-    save_steps=1000,
-    learning_rate=1e-4,
-    save_on_each_node=True,
-    gradient_checkpointing=True,
-    report_to="none",
-)
+def main(training_args, model_args, script_args):
+    # 配置Backbone
+    model_path = model_args.model_name_or_path
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        pretrained_model_name_or_path=model_path,
+        torch_dtype=torch.bfloat16,
+        attn_implementation=model_args.attn_implementation,
+        device_map="auto"
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(model_path)
+    model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
-# 配置Trainer
-trainer = Trainer(
-    model=peft_model,
-    args=args,
-    train_dataset=train_dataset,
-    data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
-)
-# 开启模型训练
-trainer.train()
+    # 配置LoRA
+    config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        target_modules=model_args.target_modules,
+        inference_mode=False,  # 训练模式
+        r=model_args.lora_r,
+        lora_alpha=model_args.lora_alpha,
+        lora_dropout=model_args.lora_dropout,
+        bias="none",
+    )
+    peft_model = get_peft_model(model, config)
+
+    # 配置数据集
+    train_ds = load_dataset("json", data_files=script_args.dataset_path, streaming=True)
+    train_dataset = train_ds.map(process_func, fn_kwargs={
+        "processor": processor,
+        "tokenizer": tokenizer,
+        "max_frames": script_args.max_frames,
+        "data_root": script_args.data_root,
+    })
+
+    # 配置Trainer
+    trainer = Trainer(
+        model=peft_model,
+        args=training_args,
+        train_dataset=train_dataset,
+        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
+    )
+    # 开启模型训练
+    trainer.train()
+
+if __name__ == "__main__":
+    parser = HfArgumentParser((TrainingArguments, ModelArguments, ScriptArguments))
+    training_args, model_args, script_args = parser.parse_args_into_dataclasses()
+    main(training_args, model_args, script_args)

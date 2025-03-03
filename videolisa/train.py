@@ -1,4 +1,5 @@
 import os
+import json
 from dataclasses import dataclass, field
 import torch
 import numpy as np
@@ -9,16 +10,38 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForSeq2Seq,
-    HfArgumentParser
+)
+from trl import (
+    TrlParser,
 )
 from peft import LoraConfig, TaskType, get_peft_model
-from datasets import load_dataset
+from datasets import IterableDataset
 
+"""
+accelerate launch --config_file configs/accelerate/zero3.yaml --num_processes=1 \
+videolisa/train.py \
+--model_name_or_path=Qwen/Qwen2.5-1.5B-Instruct \
+--attn_implementation=flash_attention_2 \
+--target_modules="q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj" \
+--lora_r=64 \
+--lora_alpha=16 \
+--lora_dropout=0.05 \
+--max_frames=12 \
+--per_device_train_batch_size=1 \
+--data_root=/media/automan/6E94666294662CB1/A_Content/Youtube/videos \
+--dataset_path=/media/automan/ExSpace/Projects/VideoLISA/dataset/labels/train-10000.json \
+--num_train_epochs=1
+"""
+
+# On server dataset is organized without folders
+LOCAL = True
 
 def process_func(sample, processor, tokenizer, max_frames, data_root):
     sample_id = sample['id']
-    video_path = os.path.join(data_root, sample_id)
-
+    if LOCAL:
+        video_path = os.path.join(data_root, sample_id)
+    else:
+        video_path = data_root
     """ Fetch clip videos file """
     clip_video_path = os.path.join(video_path, '{}_vtime.mp4'.format(sample_id))
     video_input, video_sample_fps = fetch_video({"video": clip_video_path,
@@ -93,6 +116,11 @@ def process_func(sample, processor, tokenizer, max_frames, data_root):
     return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels,
             "pixel_values_videos": pixel_values_videos, "video_grid_thw": video_grid_thw}
 
+def data_generator(samples, processor, tokenizer, max_frames, data_root):
+    for sample in samples:
+        yield process_func(sample, processor, tokenizer, max_frames, data_root)
+
+
 @dataclass
 class ModelArguments:
     model_name_or_path: str = field()
@@ -119,7 +147,7 @@ def main(training_args, model_args, script_args):
         pretrained_model_name_or_path=model_path,
         torch_dtype=torch.bfloat16,
         attn_implementation=model_args.attn_implementation,
-        device_map="auto"
+        # device_map="auto"
     )
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     processor = AutoProcessor.from_pretrained(model_path)
@@ -138,14 +166,20 @@ def main(training_args, model_args, script_args):
     peft_model = get_peft_model(model, config)
 
     # 配置数据集
-    train_ds = load_dataset("json", data_files=script_args.dataset_path, streaming=True)
-    train_dataset = train_ds.map(process_func, fn_kwargs={
-        "processor": processor,
-        "tokenizer": tokenizer,
-        "max_frames": script_args.max_frames,
-        "data_root": script_args.data_root,
-    })
+    # train_ds = load_dataset("json", data_files=script_args.dataset_path, streaming=True)
+    # train_dataset = train_ds.map(process_func, fn_kwargs={
+    #     "processor": processor,
+    #     "tokenizer": tokenizer,
+    #     "max_frames": script_args.max_frames,
+    #     "data_root": script_args.data_root,
+    # })
 
+    train_dataset = IterableDataset.from_generator(data_generator,
+                                                   gen_kwargs={"samples": json.load(open(script_args.dataset_path)),
+                                                               "processor": processor,
+                                                               "tokenizer": tokenizer,
+                                                               "max_frames": script_args.max_frames,
+                                                               "data_root": script_args.data_root})
     # 配置Trainer
     trainer = Trainer(
         model=peft_model,
@@ -156,7 +190,8 @@ def main(training_args, model_args, script_args):
     # 开启模型训练
     trainer.train()
 
+
 if __name__ == "__main__":
-    parser = HfArgumentParser((TrainingArguments, ModelArguments, ScriptArguments))
-    training_args, model_args, script_args = parser.parse_args_into_dataclasses()
+    parser = TrlParser((TrainingArguments, ModelArguments, ScriptArguments))
+    training_args, model_args, script_args = parser.parse_args_and_config()
     main(training_args, model_args, script_args)

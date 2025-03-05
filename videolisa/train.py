@@ -10,10 +10,9 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForSeq2Seq,
+
 )
-from trl import (
-    TrlParser,
-)
+from trl import TrlParser
 from peft import LoraConfig, TaskType, get_peft_model
 from datasets import IterableDataset
 
@@ -36,6 +35,8 @@ videolisa/train.py \
 # On server dataset is organized without folders
 LOCAL = True
 
+
+# TODO: Make this iterable datasets compatible with multi batch size
 def process_func(sample, processor, tokenizer, max_frames, data_root):
     sample_id = sample['id']
     if LOCAL:
@@ -45,9 +46,12 @@ def process_func(sample, processor, tokenizer, max_frames, data_root):
     """ Fetch clip videos file """
     clip_video_path = os.path.join(video_path, '{}_vtime.mp4'.format(sample_id))
     video_input, video_sample_fps = fetch_video({"video": clip_video_path,
-                                                 "max_frames": max_frames},
+                                                 "resized_height": 560,
+                                                 "resized_width": 1008,
+                                                 "nframes": max_frames},
                                                 return_video_sample_fps=True)
     # print(f"Frames shape: {video_input.shape}, FPS: {video_sample_fps}")
+    # video_input = pad_or_truncate_video(video_input, max_frames)
 
     """ Convert timestamp (token) to frame number (ntoken)"""
     sample['meta']['ntoken'] = {}
@@ -147,7 +151,7 @@ def main(training_args, model_args, script_args):
         pretrained_model_name_or_path=model_path,
         torch_dtype=torch.bfloat16,
         attn_implementation=model_args.attn_implementation,
-        # device_map="auto"
+        #device_map="auto"
     )
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     processor = AutoProcessor.from_pretrained(model_path)

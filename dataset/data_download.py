@@ -1,4 +1,5 @@
 import os
+import zipfile
 import json
 import time
 import subprocess
@@ -156,6 +157,26 @@ def download_dataset_parallel(data_list, max_data_number=0, skip_list=[], num_wo
     print('TRIM_ERROR_EXCEPTION:', fail_list[4])
     return modify_labels, clip_video_paths
 
+
+def zip_files(file_paths, output_zip):
+        """
+        将 file_paths 列表中的所有文件打包到 output_zip 指定的 zip 文件中
+
+        参数：
+        file_paths -- 要打包的文件路径列表
+        output_zip -- 生成的 zip 文件路径
+        """
+        with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in file_paths:
+                if os.path.exists(file_path) and os.path.isfile(file_path):
+                    # 使用 os.path.basename 将文件存储为压缩包内的文件名（不包含原始路径）
+                    arcname = os.path.basename(file_path)
+                    zipf.write(file_path, arcname=arcname)
+                    print(f"添加 {file_path} 到 {output_zip} 中")
+                else:
+                    print(f"警告：{file_path} 不存在或不是文件")
+
+
 # 配置及主程序入口
 if __name__ == "__main__":
     dataset = json.load(open("./labels/stage2.json"))
@@ -168,10 +189,10 @@ if __name__ == "__main__":
         # 其它可选参数根据需求添加
     }
 
-    skip_list = json.load(open("./skips/skip-list-20000.json"))["data"]
-    START = 10000
-    MAX_DATA_NUM = 20000
-    labels, _ = download_dataset_parallel(dataset,
+    START = 0
+    MAX_DATA_NUM = 10000
+    skip_list = json.load(open(F"./skips/skip-list-{MAX_DATA_NUM}.json"))["data"]
+    labels, clip_video_paths = download_dataset_parallel(dataset,
                                           start=START,
                                           max_data_number=MAX_DATA_NUM,
                                           skip_list=skip_list, num_workers=2)
@@ -179,3 +200,8 @@ if __name__ == "__main__":
     train_len = int(data_len * 0.9)
     json.dump(labels[:train_len], open(f"labels/train-{MAX_DATA_NUM}.json", "w"), indent=2)
     json.dump(labels[train_len:], open(f"labels/test-{MAX_DATA_NUM}.json", "w"), indent=2)
+
+    ZIP = True
+    if ZIP:
+        zip_files(clip_video_paths[:train_len], "videos.zip")
+        print(f"所有文件已打包")

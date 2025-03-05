@@ -14,3 +14,4 @@ videolisa/train.py \
 --config configs/default.yaml \
 --per_device_train_batch_size=2 --num_train_epochs=5
 `
+### Notes: Currently, zero3 training is not compatible with gradient checkpoint.

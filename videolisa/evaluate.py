@@ -5,7 +5,8 @@ import torch
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
 from peft import LoraConfig, TaskType, get_peft_model, PeftModel
 from qwen_vl_utils import process_vision_info
-
+from transformers import TrainingArguments
+from trl import TrlParser
 
 def multiply_numbers_in_string(text, coeff):
     # 回调函数：将匹配到的数字串转换为整数，乘以系数，再转换回字符串
@@ -40,7 +41,15 @@ def predict(processor, messages, model):
     return output_text
 
 
+def main():
+    pass
+
+
 if __name__ == "__main__":
+    parser = TrlParser((TrainingArguments, ModelArguments, ScriptArguments))
+    training_args, model_args, script_args = parser.parse_args_and_config()
+    main(training_args, model_args, script_args)
+
     model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
 
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -59,7 +68,7 @@ if __name__ == "__main__":
         task_type=TaskType.CAUSAL_LM,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         inference_mode=True,  # 测试模式
-        r=64,  # Lora 秩
+        r=8,  # Lora 秩
         lora_alpha=16,  # Lora alaph，具体作用参见 Lora 原理
         lora_dropout=0.05,  # Dropout 比例
         bias="none",
@@ -69,7 +78,7 @@ if __name__ == "__main__":
     val_peft_model = PeftModel.from_pretrained(model, model_id="../output/Qwen2_5-VL-3B/checkpoint-500", config=val_config)
 
     # 读取测试数据
-    with open("../dataset/labels/test-2000.json", "r") as f:
+    with open("../dataset/labels/test-10000.json", "r") as f:
         test_dataset = json.load(f)
 
     MAX_TEST_SAMPLES = 1
@@ -79,14 +88,19 @@ if __name__ == "__main__":
     for data in test_dataset[:MAX_TEST_SAMPLES]:
         video_id = data["id"]
         video_path = f"{SAVE_PATH}/{video_id}/{video_id}_vtime.mp4"
-        # video_path = "./1.mp4"
+        print(f"Processing video: {video_path}")
+        #video_path = "./1.mp4"
+        video_path = "/media/automan/ExSpace/Projects/VideoLISA/dataset/videos/Mq57LwS2UtI/Mq57LwS2UtI_vtime.mp4"
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": [
-                # {"type": "text", "text": "During which time period in the video does the event 'a person is pointing to a mug' happens?"},
-                {"type": "text", "text": prompt},
-                {"video": video_path, "total_pixels": 20480 * 28 * 28, "min_pixels": 16 * 28 * 28},
-            ]
+                #{"type": "text", "text": "During which time period in the video does the event 'a person is pointing at a coffe maker' happens?"},
+                #{"type": "text", "text": prompt},
+                {"type": "text", "text": "Could you provide a summary of the incidents that occurred at various timestamps in the video?"},
+                {"video": video_path, "total_pixels": 20480 * 28 * 28, "min_pixels": 16 * 28 * 28,
+                 #"resized_height": 560, "resized_width": 1008, "nframes": 30
+                 },
+            ]# A crowd of people watching an asian news broadcast from 0 to 3.5. An image of the news, showing people at a church from 3.5 to 7.7.
              },
         ]
         "{'role': 'assistant', 'content': 'From 5.043243243243244 to 5.547567567567568.'}"

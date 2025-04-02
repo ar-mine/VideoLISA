@@ -1,12 +1,15 @@
 import re
 import json
-
+import os
 import torch
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
 from peft import LoraConfig, TaskType, get_peft_model, PeftModel
 from qwen_vl_utils import process_vision_info
 from transformers import TrainingArguments
 from trl import TrlParser
+from utils import ModelArguments, ScriptArguments
+from tqdm import tqdm
+
 
 def multiply_numbers_in_string(text, coeff):
     # 回调函数：将匹配到的数字串转换为整数，乘以系数，再转换回字符串
@@ -41,72 +44,120 @@ def predict(processor, messages, model):
     return output_text
 
 
-def main():
-    pass
+def iou(outputs, gt):
+    matches = re.findall(r'-?\d+\.\d+|-?\.\d+|-?\d+', outputs)
+    matches = [float(num) for num in matches]
+    if not matches:
+        return 0.0
+    from_number, to_number = matches[0], matches[-1]
+    s, e = gt
+    intersection = max(0, min(to_number, e) - max(from_number, s))
+    union = max(to_number, e) - min(from_number, s)
+    iou = intersection / union
+    return round(iou, 2)
 
+
+def main(training_args, model_args, script_args):
+    model_path = model_args.model_name_or_path
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        pretrained_model_name_or_path=model_path,
+        torch_dtype=torch.bfloat16,
+        attn_implementation=model_args.attn_implementation,
+        device_map="auto"
+    )
+    processor = AutoProcessor.from_pretrained(model_path)
+    model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
+
+    # ===测试模式===
+    # 配置测试参数
+    val_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        target_modules=model_args.target_modules,
+        inference_mode=True,  # 测试模式
+        r=model_args.lora_r,
+        lora_alpha=model_args.lora_alpha,
+        lora_dropout=model_args.lora_dropout,
+        bias="none",
+    )
+    # 获取测试模型
+    model_id = f"{os.getcwd()}/{training_args.output_dir}/checkpoint-{training_args.max_steps}"
+    val_peft_model = PeftModel.from_pretrained(model, model_id=model_id, config=val_config)
+
+    # val_peft_model = model
+
+    # 读取测试数据
+    val_samples = json.load(open(script_args.val_dataset_path))
+    data_type = script_args.val_dataset_type
+    if data_type not in ["internvid", "activitynet"]:
+        raise NotImplementedError(f"Data type {data_type} is not supported.")
+    count, scores = 0, 0.0
+    if data_type == "internvid":
+        data_root = script_args.data_root
+        for data in val_samples[:10]:
+            video_id = data["id"]
+            video_path = f"{data_root}/{video_id}/{video_id}_vtime.mp4"
+            print(f"Processing video: {video_path}")
+            for i in range(len(data["conversations"])//2):
+                question = data["conversations"][2*i]["value"][8:]
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": question},
+                        {"video": video_path, "total_pixels": 20480 * 28 * 28, "min_pixels": 16 * 28 * 28, "max_frames": script_args.max_frames},
+                    ]},
+                ]
+                response = predict(processor, messages, val_peft_model)
+                messages.append({"role": "assistant", "content": f"{response}"})
+
+                s = data["meta"]["token"][f"<s{i}>"]
+                e = data["meta"]["token"][f"<e{i}>"]
+                print("Ground Truth: " + f"{s} to {e}")
+                r = messages[-1]["content"]
+                print("Result:" + r)
+                iou_score = iou(response, (s, e))
+                print("IoU: " + f"{iou_score}")
+                count += 1
+                scores += iou_score
+    elif data_type == "activitynet":
+        data_root = script_args.data_root
+        video_index = json.load(open(f"{data_root}/index.json", "r"))
+        for video_id in tqdm(val_samples.keys()):
+            if video_id not in video_index.keys():
+                print(f"Skipping video: {video_id}")
+                continue
+            video_path = os.path.join(data_root, video_index[video_id])
+            print(f"Processing video: {video_path}")
+            data = val_samples[video_id]
+            for i in range(len(data["sentences"])):
+                question = data["sentences"][i]
+                question = question.strip().lower()
+                if question.endswith("."):
+                    question = question[:-1]
+                question = f"During which frames can we see {question}?"
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": question},
+                        {"video": video_path, "total_pixels": 20480 * 28 * 28, "min_pixels": 16 * 28 * 28, "max_frames": script_args.max_frames},
+                    ]},
+                ]
+                response = predict(processor, messages, val_peft_model)
+                messages.append({"role": "assistant", "content": f"{response}"})
+
+                s = data["timestamps"][i][0]
+                e = data["timestamps"][i][1]
+                # print("Ground Truth: " + f"{s} to {e}")
+                r = messages[-1]["content"]
+                # print("Result:" + r)
+                iou_score = iou(response, (s, e))
+                # print("IoU: " + f"{iou_score}")
+                count += 1
+                scores += iou_score
+    mIoU = scores / count
+    print(f"mIoU: {mIoU}")
 
 if __name__ == "__main__":
     parser = TrlParser((TrainingArguments, ModelArguments, ScriptArguments))
     training_args, model_args, script_args = parser.parse_args_and_config()
     main(training_args, model_args, script_args)
 
-    model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
-
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
-        device_map="auto"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
-    processor = AutoProcessor.from_pretrained(model_path, use_fast=False)
-
-    model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
-    # ===测试模式===
-    # 配置测试参数
-    val_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        inference_mode=True,  # 测试模式
-        r=8,  # Lora 秩
-        lora_alpha=16,  # Lora alaph，具体作用参见 Lora 原理
-        lora_dropout=0.05,  # Dropout 比例
-        bias="none",
-    )
-
-    # 获取测试模型
-    val_peft_model = PeftModel.from_pretrained(model, model_id="../output/Qwen2_5-VL-3B/checkpoint-500", config=val_config)
-
-    # 读取测试数据
-    with open("../dataset/labels/test-10000.json", "r") as f:
-        test_dataset = json.load(f)
-
-    MAX_TEST_SAMPLES = 1
-    SAVE_PATH = "/media/automan/ExSpace/Projects/VideoLISA/dataset/videos"
-    prompt = "Could you provide a summary of the incidents that occurred at various timestamps in the video?"
-
-    for data in test_dataset[:MAX_TEST_SAMPLES]:
-        video_id = data["id"]
-        video_path = f"{SAVE_PATH}/{video_id}/{video_id}_vtime.mp4"
-        print(f"Processing video: {video_path}")
-        #video_path = "./1.mp4"
-        video_path = "/media/automan/ExSpace/Projects/VideoLISA/dataset/videos/Mq57LwS2UtI/Mq57LwS2UtI_vtime.mp4"
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": [
-                #{"type": "text", "text": "During which time period in the video does the event 'a person is pointing at a coffe maker' happens?"},
-                #{"type": "text", "text": prompt},
-                {"type": "text", "text": "Could you provide a summary of the incidents that occurred at various timestamps in the video?"},
-                {"video": video_path, "total_pixels": 20480 * 28 * 28, "min_pixels": 16 * 28 * 28,
-                 #"resized_height": 560, "resized_width": 1008, "nframes": 30
-                 },
-            ]# A crowd of people watching an asian news broadcast from 0 to 3.5. An image of the news, showing people at a church from 3.5 to 7.7.
-             },
-        ]
-        "{'role': 'assistant', 'content': 'From 5.043243243243244 to 5.547567567567568.'}"
-        # {'role': 'assistant', 'content': 'From 0.0 to 1.5499357142857142, a coffee maker and a cup on a table. '
-        # 'From 1.5499357142857142 to 3.6165166666666666, a person is pointing to a coffee maker and a mug. '
-        # 'From 3.6165166666666666 to 5.6830976190476195, a coffee maker and a cup sitting on top of a table.'}
-        response = predict(processor, messages, val_peft_model)
-        messages.append({"role": "assistant", "content": f"{response}"})
-        print(messages[-1])

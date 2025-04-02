@@ -167,14 +167,18 @@ def zip_files(file_paths, output_zip):
         output_zip -- 生成的 zip 文件路径
         """
         with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            print("Checking...")
             for file_path in file_paths:
                 if os.path.exists(file_path) and os.path.isfile(file_path):
-                    # 使用 os.path.basename 将文件存储为压缩包内的文件名（不包含原始路径）
-                    arcname = os.path.basename(file_path)
-                    zipf.write(file_path, arcname=arcname)
-                    print(f"添加 {file_path} 到 {output_zip} 中")
+                    pass
                 else:
                     print(f"警告：{file_path} 不存在或不是文件")
+                    exit(1)
+            print("Check success!")
+            for file_path in file_paths:
+                arcname = os.path.basename(file_path)
+                zipf.write(file_path, arcname=arcname)
+                print(f"添加 {file_path} 到 {output_zip} 中")
 
 
 # 配置及主程序入口
@@ -189,14 +193,16 @@ if __name__ == "__main__":
         # 其它可选参数根据需求添加
     }
 
-    START = 0
-    MAX_DATA_NUM = 10000
-    skip_list = json.load(open(F"./skips/skip-list-{MAX_DATA_NUM}.json"))["data"]
+    START = 20000
+    MAX_DATA_NUM = 30000
+    skip_list = json.load(open(f"./skips/skip-list-{MAX_DATA_NUM}.json", "r"))["data"]
+    print(len(skip_list))
     labels, clip_video_paths = download_dataset_parallel(dataset,
                                           start=START,
                                           max_data_number=MAX_DATA_NUM,
                                           skip_list=skip_list, num_workers=2)
     data_len = len(labels)
+    print(data_len, len(clip_video_paths))
     train_len = int(data_len * 0.9)
     json.dump(labels[:train_len], open(f"labels/train-{MAX_DATA_NUM}.json", "w"), indent=2)
     json.dump(labels[train_len:], open(f"labels/test-{MAX_DATA_NUM}.json", "w"), indent=2)

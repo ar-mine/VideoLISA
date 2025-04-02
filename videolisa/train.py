@@ -1,6 +1,5 @@
 import os
 import json
-from dataclasses import dataclass, field
 import torch
 import numpy as np
 
@@ -15,6 +14,7 @@ from transformers import (
 from trl import TrlParser
 from peft import LoraConfig, TaskType, get_peft_model
 from datasets import IterableDataset
+from utils import ModelArguments, ScriptArguments
 
 """
 accelerate launch --config_file configs/accelerate/zero3.yaml --num_processes=1 \
@@ -46,9 +46,11 @@ def process_func(sample, processor, tokenizer, max_frames, data_root):
     """ Fetch clip videos file """
     clip_video_path = os.path.join(video_path, '{}_vtime.mp4'.format(sample_id))
     video_input, video_sample_fps = fetch_video({"video": clip_video_path,
-                                                 "resized_height": 560,
-                                                 "resized_width": 1008,
-                                                 "nframes": max_frames},
+                                                 #"resized_height": 560,
+                                                 #"resized_width": 1008,
+                                                 #"nframes": max_frames,
+                                                 "max_frames": max_frames
+                                                 },
                                                 return_video_sample_fps=True)
     # print(f"Frames shape: {video_input.shape}, FPS: {video_sample_fps}")
     # video_input = pad_or_truncate_video(video_input, max_frames)
@@ -125,24 +127,6 @@ def data_generator(samples, processor, tokenizer, max_frames, data_root):
         yield process_func(sample, processor, tokenizer, max_frames, data_root)
 
 
-@dataclass
-class ModelArguments:
-    model_name_or_path: str = field()
-    attn_implementation: str = field()
-
-    target_modules: list[str] = field()
-    lora_r: int = field()
-    lora_alpha: int = field()
-    lora_dropout: float = field()
-
-@dataclass
-class ScriptArguments:
-    max_frames: int = field(
-        metadata={'help': 'Max number of frames to process'},
-    )
-    data_root: str = field()
-    dataset_path: str = field()
-
 
 def main(training_args, model_args, script_args):
     # 配置Backbone
@@ -179,7 +163,7 @@ def main(training_args, model_args, script_args):
     # })
 
     train_dataset = IterableDataset.from_generator(data_generator,
-                                                   gen_kwargs={"samples": json.load(open(script_args.dataset_path)),
+                                                   gen_kwargs={"samples": json.load(open(script_args.train_dataset_path)),
                                                                "processor": processor,
                                                                "tokenizer": tokenizer,
                                                                "max_frames": script_args.max_frames,

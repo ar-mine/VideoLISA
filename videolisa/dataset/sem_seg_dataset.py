@@ -163,7 +163,9 @@ class SemSegDataset(torch.utils.data.Dataset):
             labels = torch.tensor(labels)
             mask = torch.tensor(mask)
             inputs['pixel_values'] = torch.tensor(inputs['pixel_values'])
-            inputs['image_grid_thw'] = torch.tensor(inputs['image_grid_thw']).squeeze(0)  #由（1,h,w)变换为（h,w）
+            inputs['image_grid_thw'] = torch.tensor(inputs['image_grid_thw']).squeeze(0)  #由（1,h,w)变换为（h,w
+            if len(image.shape) == 2:
+                image = np.stack([image] * 3, axis=-1)
             return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels,
                     "pixel_values": inputs['pixel_values'], "image_grid_thw": inputs['image_grid_thw'],
                     "gt_masks": mask, "original_images": image}

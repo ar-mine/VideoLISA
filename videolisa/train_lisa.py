@@ -1,14 +1,10 @@
-import os
-import json
 import torch
-import numpy as np
 
-from qwen_vl_utils import fetch_video
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
 from transformers import (
     TrainingArguments,
+    TrainerCallback,
     Trainer,
-
 )
 from model.VideoLISA import VideoLISA
 from dataset.sem_seg_dataset import SemSegDataset
@@ -20,6 +16,19 @@ from utils import ModelArguments, ScriptArguments
 
 # On server dataset is organized without folders
 LOCAL = True
+
+
+class CustomLoggingCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """
+        在每次日志记录时调用
+        """
+        if logs is not None:
+            # 默认日志输出
+            print(f"Step: {state.global_step}, Logs: {logs}")
+            # 添加自定义参数（假设 ce_loss 已包含在 logs 中）
+            if "ce_loss" in logs:
+                print(f"Custom - ce_loss: {logs['ce_loss']}")
 
 
 # TODO: Make this iterable datasets compatible with multi batch size
@@ -64,6 +73,8 @@ def main(training_args, model_args, script_args):
     peft_model = get_peft_model(model, config)
     peft_model.base_model.lm_head.weight.requires_grad = True
     peft_model.base_model.model.model.embed_tokens.weight.requires_grad = True
+    for name, param in peft_model.base_model.text_hidden_fcs.named_parameters():
+        param.requires_grad = True
 
     train_dataset = SemSegDataset(base_image_dir=script_args.data_root,
                                   processor=processor, tokenizer=tokenizer)
@@ -73,6 +84,7 @@ def main(training_args, model_args, script_args):
         args=training_args,
         train_dataset=train_dataset,
         data_collator=DataCollatorForLISA(tokenizer=tokenizer, padding=True),
+        callbacks=[CustomLoggingCallback()],
     )
     # 开启模型训练
     trainer.train()

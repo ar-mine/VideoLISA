@@ -125,7 +125,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             rope_deltas: Optional[torch.LongTensor] = None,
             cache_position: Optional[torch.LongTensor] = None,
             second_per_grid_ts: Optional[torch.Tensor] = None,
-    ) -> Union[Tuple, Qwen2_5_VLCausalLMOutputWithPast]:
+    ) -> tuple | Qwen2_5_VLCausalLMOutputWithPast | VideoLISACausalLMOutputWithPast:
 
         outputs = super().forward(input_ids=input_ids,
                                   attention_mask=attention_mask,

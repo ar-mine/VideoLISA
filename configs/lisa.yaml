@@ -36,7 +36,7 @@ packing: true
 max_seq_length: 512
 #max_steps: 600
 num_train_epochs: 1
-output_dir: output/VideoLISA_lora-8_frame-16
+output_dir: output/VideoLISA
 overwrite_output_dir: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 4

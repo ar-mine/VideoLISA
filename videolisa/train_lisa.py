@@ -73,8 +73,10 @@ def main(training_args, model_args, script_args):
     peft_model = get_peft_model(model, config)
     peft_model.base_model.lm_head.weight.requires_grad = True
     peft_model.base_model.model.model.embed_tokens.weight.requires_grad = True
+    text_hidden_fcs_params = {}
     for name, param in peft_model.base_model.text_hidden_fcs.named_parameters():
         param.requires_grad = True
+        text_hidden_fcs_params[name] = param
 
     train_dataset = SemSegDataset(base_image_dir=script_args.data_root,
                                   processor=processor, tokenizer=tokenizer)
@@ -88,6 +90,7 @@ def main(training_args, model_args, script_args):
     )
     # 开启模型训练
     trainer.train()
+    torch.save(text_hidden_fcs_params, script_args.save_path)
 
 
 if __name__ == "__main__":

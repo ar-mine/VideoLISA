@@ -1,34 +1,71 @@
 import torch
-
+import os
+import cv2
+import numpy as np
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
 from transformers import (
     TrainingArguments,
     TrainerCallback,
-    Trainer,
+    Trainer
 )
 from model.VideoLISA import VideoLISA
 from dataset.sem_seg_dataset import SemSegDataset
 from dataset.dataset import DataCollatorForLISA
 from trl import TrlParser
 from peft import LoraConfig, TaskType, get_peft_model
-from utils import ModelArguments, ScriptArguments
+from utils import ModelArguments, ScriptArguments, find_linear_layers
+from qwen_vl_utils import process_vision_info
+
 
 
 # On server dataset is organized without folders
 LOCAL = True
 
 
-class CustomLoggingCallback(TrainerCallback):
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        """
-        在每次日志记录时调用
-        """
-        if logs is not None:
-            # 默认日志输出
-            print(f"Step: {state.global_step}, Logs: {logs}")
-            # 添加自定义参数（假设 ce_loss 已包含在 logs 中）
-            if "ce_loss" in logs:
-                print(f"Custom - ce_loss: {logs['ce_loss']}")
+class LISATrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        loss, outputs = super().compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
+        # 将额外 metrics 添加到 self.state.log 中
+        if self.state.global_step % self.args.logging_steps == 0:
+            extra_metrics = {"ce_loss": outputs["ce_loss"].item(),
+                             "mask_bce_loss": outputs["mask_bce_loss"].item(),
+                             "mask_dice_loss": outputs["mask_dice_loss"].item()}
+            self.log(extra_metrics)
+
+        return (loss, outputs) if return_outputs else loss
+
+
+def predict(messages, model, processor):
+    # 准备推理
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to("cuda")
+
+    # 生成输出
+    generated_ids, pred_masks = model.generate(original_images=image_inputs, **inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
+    # output_text = processor.batch_decode(
+    #     generated_ids_trimmed, skip_special_tokens=False, clean_up_tokenization_spaces=False
+    # )
+    image_np = np.array(image_inputs[0])
+    pred_mask = pred_masks[0][0].to(bool).cpu().numpy()
+    highlight = np.zeros_like(image_np, dtype=np.uint8)
+    highlight[pred_mask] = (255, 0, 0)
+    # 将高亮遮罩与原图叠加
+    highlighted_image = cv2.addWeighted(image_np, 0.5, highlight, 0.5, 0)
+    return output_text[0], highlighted_image
 
 
 # TODO: Make this iterable datasets compatible with multi batch size
@@ -61,9 +98,10 @@ def main(training_args, model_args, script_args):
         embedding_layer.weight.data[token_id] = embedding_layer.weight.data[reference_token_id].clone()
 
     # 配置LoRA
+    lora_layers = find_linear_layers(model, model_args.target_modules, ["sam", "text_hidden_fcs"])
     config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
-        target_modules=model_args.target_modules,
+        target_modules=lora_layers,
         inference_mode=False,  # 训练模式
         r=model_args.lora_r,
         lora_alpha=model_args.lora_alpha,
@@ -81,16 +119,37 @@ def main(training_args, model_args, script_args):
     train_dataset = SemSegDataset(base_image_dir=script_args.data_root,
                                   processor=processor, tokenizer=tokenizer)
     # 配置Trainer
-    trainer = Trainer(
+    trainer = LISATrainer(
         model=peft_model,
         args=training_args,
         train_dataset=train_dataset,
         data_collator=DataCollatorForLISA(tokenizer=tokenizer, padding=True),
-        callbacks=[CustomLoggingCallback()],
     )
     # 开启模型训练
     trainer.train()
-    torch.save(text_hidden_fcs_params, script_args.save_path)
+    torch.save(text_hidden_fcs_params,
+               os.path.join(training_args.output_dir, "text_hidden_fcs_params.pt"))
+
+    # Eval
+    origin_image_path = "/media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016/images/train/ADE_train_00000001.jpg"
+    messages = [{
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "image": origin_image_path
+            },
+            {
+                "type": "text",
+                "text": "Can you segment the floor in this image?"
+            }
+        ]}]
+
+    response, image = predict(messages, peft_model, processor)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    cv2.imwrite("output/image.png", image.astype(np.uint8))
+    messages.append({"role": "assistant", "content": f"{response}"})
+    print(messages[-1])
 
 
 if __name__ == "__main__":

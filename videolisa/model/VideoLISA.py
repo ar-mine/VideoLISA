@@ -9,7 +9,7 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLCausalL
 from transformers.modeling_outputs import ModelOutput
 from .segment_anything import build_sam_vit_h
 from .segment_anything.utils.transforms import ResizeLongestSide
-
+THRESHOLD = 1.5
 
 def dice_loss(
         inputs: torch.Tensor,
@@ -239,7 +239,8 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
                     * gt_mask.shape[0]
             )
             num_masks += gt_mask.shape[0]
-
+            # if mask_bce_loss < THRESHOLD:
+            #     print("mask_bce_loss: {}".format(mask_bce_loss))
         mask_bce_loss = self.bce_loss_weight * mask_bce_loss / (num_masks + 1e-8)
         mask_dice_loss = self.dice_loss_weight * mask_dice_loss / (num_masks + 1e-8)
         mask_loss = mask_bce_loss + mask_dice_loss

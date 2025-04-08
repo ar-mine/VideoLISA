@@ -6,9 +6,8 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, Auto
 from transformers import (
     TrainingArguments,
     TrainerCallback,
-    Trainer
 )
-from model.VideoLISA import VideoLISA
+from model.VideoLISA import VideoLISA, LISATrainer
 from dataset.sem_seg_dataset import SemSegDataset
 from dataset.dataset import DataCollatorForLISA
 from trl import TrlParser
@@ -21,18 +20,6 @@ from qwen_vl_utils import process_vision_info
 # On server dataset is organized without folders
 LOCAL = True
 
-
-class LISATrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        loss, outputs = super().compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
-        # 将额外 metrics 添加到 self.state.log 中
-        if self.state.global_step % self.args.logging_steps == 0:
-            extra_metrics = {"ce_loss": outputs["ce_loss"].item(),
-                             "mask_bce_loss": outputs["mask_bce_loss"].item(),
-                             "mask_dice_loss": outputs["mask_dice_loss"].item()}
-            self.log(extra_metrics)
-
-        return (loss, outputs) if return_outputs else loss
 
 
 def predict(messages, model, processor):

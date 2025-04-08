@@ -1,4 +1,4 @@
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union, Tuple, Dict, Any
 import torch.nn.functional as F
 import numpy as np
 import torch
@@ -9,6 +9,19 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLCausalL
 from transformers.modeling_outputs import ModelOutput
 from .segment_anything import build_sam_vit_h
 from .segment_anything.utils.transforms import ResizeLongestSide
+from transformers import Trainer
+from transformers.utils import (is_torch_mlu_available,
+                                is_torch_mps_available,
+                                is_torch_musa_available,
+                                is_torch_npu_available,
+                                is_torch_xpu_available,
+                                is_apex_available)
+from transformers.training_args import OptimizerNames
+from accelerate.utils import DistributedType
+if is_apex_available():
+    from apex import amp
+
+
 THRESHOLD = 1.5
 
 def dice_loss(
@@ -92,6 +105,10 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         self.sam = build_sam_vit_h(model_path)
         self.sam.to(self.device).to(self.dtype)
         # TODO: Load from checkpoint
+        for param in self.sam.parameters():
+            param.requires_grad = False
+        for param in self.sam.mask_decoder.parameters():
+            param.requires_grad = True
         # Projection layer (from <seg> hidden states to sam)
         in_dim = 2048
         out_dim = 256
@@ -150,8 +167,9 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             return outputs
 
         output_hidden_states = outputs.hidden_states
+        hidden_states = [self.text_hidden_fcs[0](output_hidden_states[-1])]
 
-        seg_token_ids = torch.where(input_ids[:, :] == self.seg_token_idx)
+        seg_token_ids = torch.where(input_ids[:, 1:] == self.seg_token_idx)
 
         seg_token_hidden_states = []
         for b, i in zip(*seg_token_ids):
@@ -331,3 +349,83 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             pred_masks.append(pred_mask[:, 0])
 
         return output_ids, pred_masks
+
+
+class LISATrainer(Trainer):
+    def training_step(
+            self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None
+    ) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs.
+
+        Subclass and override to inject custom behavior.
+
+        Args:
+            model (`nn.Module`):
+                The model to train.
+            inputs (`Dict[str, Union[torch.Tensor, Any]]`):
+                The inputs and targets of the model.
+
+                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
+                argument `labels`. Check your model's documentation for all accepted arguments.
+
+        Return:
+            `torch.Tensor`: The tensor with training loss on this batch.
+        """
+        model.train()
+        if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
+            self.optimizer.train()
+
+        inputs = self._prepare_inputs(inputs)
+
+        with self.compute_loss_context_manager():
+            loss, outputs = self.compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
+        if self.state.global_step % self.args.logging_steps == 0:
+            extra_metrics = {"ce_loss": outputs["ce_loss"].item(),
+                             "mask_bce_loss": outputs["mask_bce_loss"].item(),
+                             "mask_dice_loss": outputs["mask_dice_loss"].item()}
+            self.log(extra_metrics)
+
+        del inputs
+        if (
+                self.args.torch_empty_cache_steps is not None
+                and self.state.global_step % self.args.torch_empty_cache_steps == 0
+        ):
+            if is_torch_xpu_available():
+                torch.xpu.empty_cache()
+            elif is_torch_mlu_available():
+                torch.mlu.empty_cache()
+            elif is_torch_musa_available():
+                torch.musa.empty_cache()
+            elif is_torch_npu_available():
+                torch.npu.empty_cache()
+            elif is_torch_mps_available(min_version="2.0"):
+                torch.mps.empty_cache()
+            else:
+                torch.cuda.empty_cache()
+
+        kwargs = {}
+
+        # For LOMO optimizers you need to explicitly use the learnign rate
+        if self.args.optim in [OptimizerNames.LOMO, OptimizerNames.ADALOMO]:
+            kwargs["learning_rate"] = self._get_learning_rate()
+
+        if self.args.n_gpu > 1:
+            loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+        if self.use_apex:
+            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            # Finally we need to normalize the loss for reporting
+            if not self.model_accepts_loss_kwargs and self.compute_loss_func is None:
+                loss = loss / self.args.gradient_accumulation_steps
+
+            # Turning off loss scaling w.r.t. gradient accumulation when DeepSpeed is enabled
+            # https://github.com/huggingface/transformers/pull/35808
+            if self.accelerator.distributed_type == DistributedType.DEEPSPEED:
+                kwargs["scale_wrt_gas"] = False
+
+            self.accelerator.backward(loss, **kwargs)
+
+            return loss.detach()

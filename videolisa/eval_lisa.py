@@ -138,12 +138,11 @@ val_config = LoraConfig(
 )
 # 获取测试模型
 val_peft_model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/checkpoint-3789", config=val_config)
-'''
 text_hidden_fcs_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/text_hidden_fcs_params.pt")
 for name, param in val_peft_model.base_model.text_hidden_fcs.named_parameters():
     if name in text_hidden_fcs_params:
         param.data = text_hidden_fcs_params[name].data
-'''
+
 origin_image_path = "/media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016/images/train/ADE_train_00000001.jpg"
 messages = [{
     "role": "user",

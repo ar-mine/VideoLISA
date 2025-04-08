@@ -34,8 +34,8 @@ logging_strategy: steps
 lr_scheduler_type: cosine
 packing: true
 max_seq_length: 512
-#max_steps: 100
-num_train_epochs: 3
+max_steps: 100
+#num_train_epochs: 3
 output_dir: output/VideoLISA
 overwrite_output_dir: true
 per_device_eval_batch_size: 1

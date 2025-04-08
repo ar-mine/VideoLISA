@@ -102,6 +102,7 @@ def main(training_args, model_args, script_args):
     for name, param in peft_model.base_model.text_hidden_fcs.named_parameters():
         param.requires_grad = True
         text_hidden_fcs_params[name] = param
+    peft_model.print_trainable_parameters()
 
     train_dataset = SemSegDataset(base_image_dir=script_args.data_root,
                                   processor=processor, tokenizer=tokenizer)

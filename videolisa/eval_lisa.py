@@ -137,7 +137,7 @@ val_config = LoraConfig(
     bias="none",
 )
 # 获取测试模型
-val_peft_model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/checkpoint-3789", config=val_config)
+val_peft_model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/checkpoint-474", config=val_config)
 text_hidden_fcs_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/text_hidden_fcs_params.pt")
 for name, param in val_peft_model.base_model.text_hidden_fcs.named_parameters():
     if name in text_hidden_fcs_params:

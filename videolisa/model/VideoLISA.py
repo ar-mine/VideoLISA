@@ -167,22 +167,25 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             return outputs
 
         output_hidden_states = outputs.hidden_states
-        hidden_states = [self.text_hidden_fcs[0](output_hidden_states[-1])]
+        last_hidden_state = self.text_hidden_fcs[0](output_hidden_states[-1])
+        seg_token_mask = input_ids == self.seg_token_idx
+        pred_embeddings = last_hidden_state[seg_token_mask]
+        seg_token_counts = seg_token_mask.int().sum(-1)  # [bs, ]
+        seg_token_offset = seg_token_counts.cumsum(-1)
+        seg_token_offset = torch.cat(
+            [torch.zeros(1).long().cuda(), seg_token_offset], dim=0
+        )
+        pred_embeddings_ = []
+        for i in range(len(seg_token_offset) - 1):
+            start_i, end_i = seg_token_offset[i], seg_token_offset[i + 1]
+            pred_embeddings_.append(pred_embeddings[start_i:end_i])
+        pred_embeddings = pred_embeddings_
 
-        seg_token_ids = torch.where(input_ids[:, 1:] == self.seg_token_idx)
-
-        seg_token_hidden_states = []
-        for b, i in zip(*seg_token_ids):
-            offset = input_ids.shape[1]-i
-            seg_token_hidden_states.append(output_hidden_states[-offset][-1][b].unsqueeze(0))
-
-        seg_token_hidden_states = torch.cat(seg_token_hidden_states, dim=0)
-        pred_embeddings = self.text_hidden_fcs[0](seg_token_hidden_states)
         assert pred_embeddings is not None, "Cannot find <seg> token."
 
         # TODO: image input
         transform = ResizeLongestSide(self.sam.image_encoder.img_size)
-        assert pred_embeddings.shape[0] == len(original_images), "Prediction size mismatch image number"
+        assert len(pred_embeddings) == len(original_images), "Prediction size mismatch image number"
         features, input_sizes, original_sizes = [], [], []
         for idx, image in enumerate(original_images):
             image_np = image
@@ -209,13 +212,13 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 
         # TODO: sam process, parallel
         pred_masks = []
-        for i in range(pred_embeddings.shape[0]):
+        for i in range(len(pred_embeddings)):
             (sparse_embeddings, dense_embeddings
              ) = self.sam.prompt_encoder(
                 points=None,
                 boxes=None,
                 masks=None,
-                text_embeds=pred_embeddings[i].unsqueeze(0).unsqueeze(1),
+                text_embeds=pred_embeddings[i].unsqueeze(1),
             )
 
             sparse_embeddings = sparse_embeddings.to(self.dtype)
@@ -282,6 +285,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
     def generate(self, original_images, *args, **kwargs):
         outputs = super().generate(output_hidden_states=True,
                                    return_dict_in_generate=True,
+                                   num_beams=1,
                                    *args, **kwargs)
         # Tuple[
         # Tuple[
@@ -291,19 +295,19 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         output_hidden_states = outputs.hidden_states
         output_ids = outputs.sequences
 
-        seg_token_ids = torch.where(output_ids[:, :] == self.seg_token_idx)
-
+        seg_token_ids = torch.where(output_ids == self.seg_token_idx)
         seg_token_hidden_states = []
         for b, i in zip(*seg_token_ids):
             offset = output_ids.shape[1]-i
-            seg_token_hidden_states.append(output_hidden_states[-offset][-1][b].unsqueeze(0))
+            seg_token_hidden_states.append(output_hidden_states[-offset][-1])
 
         seg_token_hidden_states = torch.cat(seg_token_hidden_states, dim=0)
         pred_embeddings = self.text_hidden_fcs[0](seg_token_hidden_states)
 
         # TODO: image input
+        bs = pred_embeddings.shape[0]
         transform = ResizeLongestSide(self.sam.image_encoder.img_size)
-        assert pred_embeddings.shape[0] == len(original_images), "Prediction size mismatch image number"
+        assert bs == len(original_images), "Prediction size mismatch image number"
         pred_masks = []
         for idx, image in enumerate(original_images):
             image_np = np.array(image)
@@ -322,7 +326,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             original_size = original_image_size
             input_size = tuple(transformed_image.shape[-2:])
             input_image = self.sam.preprocess(transformed_image)
-            features = self.sam.image_encoder(input_image)
+            feature = self.sam.image_encoder(input_image)
 
             # TODO: sam process
             (sparse_embeddings, dense_embeddings
@@ -330,12 +334,12 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
                 points=None,
                 boxes=None,
                 masks=None,
-                text_embeds=pred_embeddings,
+                text_embeds=pred_embeddings[idx].unsqueeze(1),
             )
 
             sparse_embeddings = sparse_embeddings.to(self.dtype)
             low_res_masks, iou_predictions = self.sam.mask_decoder(
-                image_embeddings=features,
+                image_embeddings=feature,
                 image_pe=self.sam.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=sparse_embeddings,
                 dense_prompt_embeddings=dense_embeddings,
@@ -352,6 +356,9 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 
 
 class LISATrainer(Trainer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def training_step(
             self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None
     ) -> torch.Tensor:

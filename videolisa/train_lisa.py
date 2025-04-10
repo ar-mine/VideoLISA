@@ -1,4 +1,5 @@
 import torch
+import torch.distributed as dist
 import os
 import cv2
 import numpy as np
@@ -57,6 +58,12 @@ def predict(messages, model, processor):
 
 # TODO: Make this iterable datasets compatible with multi batch size
 def main(training_args, model_args, script_args):
+    # 确保分布式环境已初始化
+    if dist.is_available() and dist.is_initialized():
+        rank = dist.get_rank()
+    else:
+        rank = 0
+
     # 配置Backbone
     model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
 
@@ -66,7 +73,7 @@ def main(training_args, model_args, script_args):
         attn_implementation="flash_attention_2",
         device_map="auto",
     )
-    model.init_sam_module(model_path="/media/automan/ExSpace/Projects/VideoLISA/checkpoints/sam_vit_h_4b8939.pth")
+    model.init_sam_module(model_path=script_args.sam_model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.add_tokens("<seg>", special_tokens=False)
     model.seg_token_idx = tokenizer.convert_tokens_to_ids("<seg>")
@@ -98,10 +105,8 @@ def main(training_args, model_args, script_args):
     peft_model = get_peft_model(model, config)
     peft_model.base_model.lm_head.weight.requires_grad = True
     peft_model.base_model.model.model.embed_tokens.weight.requires_grad = True
-    text_hidden_fcs_params = {}
-    for name, param in peft_model.base_model.text_hidden_fcs.named_parameters():
+    for param in peft_model.base_model.text_hidden_fcs.parameters():
         param.requires_grad = True
-        text_hidden_fcs_params[name] = param
     peft_model.print_trainable_parameters()
 
     train_dataset = SemSegDataset(base_image_dir=script_args.data_root,
@@ -115,29 +120,31 @@ def main(training_args, model_args, script_args):
     )
     # 开启模型训练
     trainer.train()
-    torch.save(text_hidden_fcs_params,
-               os.path.join(training_args.output_dir, "text_hidden_fcs_params.pt"))
 
-    # Eval
-    origin_image_path = "/media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016/images/train/ADE_train_00000001.jpg"
-    messages = [{
-        "role": "user",
-        "content": [
-            {
-                "type": "image",
-                "image": origin_image_path
-            },
-            {
-                "type": "text",
-                "text": "Can you segment the floor in this image?"
-            }
-        ]}]
+    if rank == 0:
+        torch.save(peft_model.base_model.text_hidden_fcs.state_dict(),
+                   os.path.join(training_args.output_dir, "text_hidden_fcs_params.pt"))
 
-    response, image = predict(messages, peft_model, processor)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    cv2.imwrite("output/image.png", image.astype(np.uint8))
-    messages.append({"role": "assistant", "content": f"{response}"})
-    print(messages[-1])
+        # Eval
+        origin_image_path = os.path.join(script_args.data_root, "images/train/ADE_train_00000001.jpg")
+        messages = [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "image": origin_image_path
+                },
+                {
+                    "type": "text",
+                    "text": "Can you segment the floor in this image?"
+                }
+            ]}]
+
+        response, image = predict(messages, peft_model, processor)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        cv2.imwrite("output/image.png", image.astype(np.uint8))
+        messages.append({"role": "assistant", "content": f"{response}"})
+        print(messages[-1])
 
 
 if __name__ == "__main__":

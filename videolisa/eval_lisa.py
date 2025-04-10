@@ -7,7 +7,7 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, Auto
 from qwen_vl_utils import process_vision_info
 from model.VideoLISA import VideoLISA
 from peft import LoraConfig, TaskType, get_peft_model, PeftModel
-
+from utils import ModelArguments, ScriptArguments, find_linear_layers
 
 def process_func(example):
     """
@@ -127,9 +127,10 @@ model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方
 
 # ===测试模式===
 # 配置测试参数
+lora_layers = find_linear_layers(model, ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], ["sam", "text_hidden_fcs"])
 val_config = LoraConfig(
     task_type=TaskType.CAUSAL_LM,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    target_modules=lora_layers,
     inference_mode=True,
     r=64,  # Lora 秩
     lora_alpha=16,  # Lora alaph，具体作用参见 Lora 原理
@@ -137,11 +138,9 @@ val_config = LoraConfig(
     bias="none",
 )
 # 获取测试模型
-val_peft_model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/checkpoint-474", config=val_config)
+val_peft_model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/checkpoint-1580", config=val_config)
 text_hidden_fcs_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/text_hidden_fcs_params.pt")
-for name, param in val_peft_model.base_model.text_hidden_fcs.named_parameters():
-    if name in text_hidden_fcs_params:
-        param.data = text_hidden_fcs_params[name].data
+val_peft_model.base_model.text_hidden_fcs.load_state_dict(text_hidden_fcs_params)
 
 origin_image_path = "/media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016/images/train/ADE_train_00000001.jpg"
 messages = [{

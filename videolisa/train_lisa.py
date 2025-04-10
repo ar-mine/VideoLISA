@@ -61,18 +61,26 @@ def main(training_args, model_args, script_args):
     # 确保分布式环境已初始化
     if dist.is_available() and dist.is_initialized():
         rank = dist.get_rank()
+        enable_parallel = True
     else:
         rank = 0
+        enable_parallel = False
 
     # 配置Backbone
     model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
-
-    model = VideoLISA.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
-        device_map="auto",
-    )
+    if enable_parallel:
+        model = VideoLISA.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2",
+        )
+    else:
+        model = VideoLISA.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2",
+            device_map="auto",
+        )
     model.init_sam_module(model_path=script_args.sam_model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.add_tokens("<seg>", special_tokens=False)

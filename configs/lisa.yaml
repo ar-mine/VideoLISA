@@ -1,6 +1,7 @@
 # Script arguments
 max_frames: 16
-data_root: /media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016
+data_root:
+  ade20k: /media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016
 train_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/train-10000.json
 val_dataset_type: internvid # internvid or activitynet
 val_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/filtered_dataset.json

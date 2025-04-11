@@ -3,10 +3,9 @@ import torch.distributed as dist
 import os
 import cv2
 import numpy as np
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer
 from transformers import (
     TrainingArguments,
-    TrainerCallback,
 )
 from model.VideoLISA import VideoLISA, LISATrainer
 from dataset.sem_seg_dataset import SemSegDataset

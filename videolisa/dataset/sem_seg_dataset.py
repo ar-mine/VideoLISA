@@ -11,6 +11,12 @@ from .meta import *
 
 
 def init_ade20k(base_image_dir, split="train"):
+    split_map = {
+        "train": "training",
+        "val": "validation",
+        "test": "validation",
+    }
+    split = split_map[split]
     ade20k_classes = np.array(ADE20K_CLASSES)
     image_ids = sorted(
         os.listdir(os.path.join(base_image_dir, "images", split))
@@ -65,7 +71,7 @@ class SemSegDataset(torch.utils.data.Dataset):
         # Initialize dataset index
         self.sem_seg_datas = sem_seg_data.split("||")
         for ds in self.sem_seg_datas:
-            classes, images, labels = eval("init_{}".format(ds))(base_image_dir)
+            classes, images, labels = eval("init_{}".format(ds))(base_image_dir[ds])
             self.data2list[ds] = (images, labels)
             self.data2classes[ds] = classes
 

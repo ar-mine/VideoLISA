@@ -84,8 +84,8 @@ class DataCollatorForLISA(DataCollatorForSeq2Seq):
         if batch.get("labels", None) is not None:
             if return_tensors == "pt":
                 import torch
-
-                batch["labels"] = torch.tensor(batch["labels"], dtype=torch.int64)
+                # batch["labels"] = torch.cat(batch["labels"]).to(dtype=torch.int64)
+                batch["labels"] = torch.tensor(np.array(batch["labels"]), dtype=torch.int64)
             elif return_tensors == "tf":
                 import tensorflow as tf
 

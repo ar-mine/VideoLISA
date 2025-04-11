@@ -5,6 +5,7 @@ data_root:
 train_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/train-10000.json
 val_dataset_type: internvid # internvid or activitynet
 val_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/filtered_dataset.json
+dataloader_num_workers: 12
 
 # Model config
 ## Backbone part

@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 import torch
-
+from qwen_vl_utils import process_vision_info
+import numpy as np
+import cv2
 
 SHORT_QUESTION_LIST = [
     "Can you segment the object in this image?",
@@ -50,3 +52,36 @@ def find_linear_layers(model, lora_target_modules, excluded_prefix):
             lora_module_names.add(name)
     return sorted(list(lora_module_names))
 
+def predict_seg(messages, model, processor):
+    # 准备推理
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to("cuda")
+
+    # 生成输出
+    generated_ids, pred_masks = model.generate(original_images=image_inputs, **inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
+    if len(pred_masks) > 0:
+        image_np = np.array(image_inputs[0])
+        # TODO: Change bool method
+        pred_mask = pred_masks[0][0] > 0
+        pred_mask = pred_mask.cpu().numpy()
+        highlight = np.zeros_like(image_np, dtype=np.uint8)
+        highlight[pred_mask] = (255, 0, 0)
+        # 将高亮遮罩与原图叠加
+        highlighted_image = cv2.addWeighted(image_np, 0.5, highlight, 0.5, 0)
+    else:
+        highlighted_image = None
+    return output_text[0], highlighted_image

@@ -7,7 +7,7 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, Auto
 from qwen_vl_utils import process_vision_info
 from model.VideoLISA import VideoLISA
 from peft import LoraConfig, TaskType, get_peft_model, PeftModel
-from utils import ModelArguments, ScriptArguments, find_linear_layers
+from utils import ModelArguments, ScriptArguments, predict_seg
 
 def process_func(example):
     """
@@ -73,41 +73,6 @@ def process_func(example):
     return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels,
             "pixel_values": inputs['pixel_values'], "image_grid_thw": inputs['image_grid_thw']}
 
-def predict(messages, model):
-    # 准备推理
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = processor(
-        text=[text],
-        images=image_inputs,
-        videos=video_inputs,
-        padding=True,
-        return_tensors="pt",
-    )
-    inputs = inputs.to("cuda")
-
-    # 生成输出
-    generated_ids, pred_masks = model.generate(original_images=image_inputs, **inputs, max_new_tokens=128)
-    generated_ids_trimmed = [
-        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-    ]
-    output_text = processor.batch_decode(
-        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-    )
-    # output_text = processor.batch_decode(
-    #     generated_ids_trimmed, skip_special_tokens=False, clean_up_tokenization_spaces=False
-    # )
-    image_np = np.array(image_inputs[0])
-    # TODO: Change bool method
-    pred_mask = pred_masks[0][0] > 0
-    pred_mask = pred_mask.cpu().numpy()
-    highlight = np.zeros_like(image_np, dtype=np.uint8)
-    highlight[pred_mask] = (255, 0, 0)
-    # 将高亮遮罩与原图叠加
-    highlighted_image = cv2.addWeighted(image_np, 0.5, highlight, 0.5, 0)
-    return output_text[0], highlighted_image
-
-
 model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
 
 model = VideoLISA.from_pretrained(
@@ -123,26 +88,12 @@ model.seg_token_idx = tokenizer.convert_tokens_to_ids("<seg>")
 model.resize_token_embeddings(len(tokenizer))
 processor = AutoProcessor.from_pretrained(model_path)
 processor.tokenizer = tokenizer
-model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
-# ===测试模式===
-# 配置测试参数
-lora_layers = find_linear_layers(model, ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], ["sam", "text_hidden_fcs"])
-val_config = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    target_modules=lora_layers,
-    inference_mode=True,
-    r=64,  # Lora 秩
-    lora_alpha=16,  # Lora alaph，具体作用参见 Lora 原理
-    lora_dropout=0.05,  # Dropout 比例
-    bias="none",
-)
 # 获取测试模型
-val_peft_model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/checkpoint-1580", config=val_config)
-text_hidden_fcs_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/text_hidden_fcs_params.pt")
-val_peft_model.base_model.text_hidden_fcs.load_state_dict(text_hidden_fcs_params)
+model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/VideoLISA/video-lisa.pt")
+model.load_state_dict(model_params)
 
-origin_image_path = "/media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016/images/train/ADE_train_00000001.jpg"
+origin_image_path = "/media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016/images/training/ADE_train_00000001.jpg"
 messages = [{
     "role": "user",
     "content": [
@@ -156,7 +107,7 @@ messages = [{
         }
     ]}]
 
-response, image = predict(messages, model)
+response, image = predict_seg(messages, model, processor)
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 cv2.imwrite("output/image.png", image.astype(np.uint8))
 messages.append({"role": "assistant", "content": f"{response}"})

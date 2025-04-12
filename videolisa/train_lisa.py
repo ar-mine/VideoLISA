@@ -13,43 +13,9 @@ from dataset.sem_seg_dataset import SemSegDataset
 from dataset.dataset import DataCollatorForLISA
 from trl import TrlParser
 from peft import LoraConfig, TaskType, get_peft_model
-from utils import ModelArguments, ScriptArguments, find_linear_layers
-from qwen_vl_utils import process_vision_info
+from utils import ModelArguments, ScriptArguments, find_linear_layers, predict_seg
 
 global rank
-
-def predict(messages, model, processor):
-    # 准备推理
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = processor(
-        text=[text],
-        images=image_inputs,
-        videos=video_inputs,
-        padding=True,
-        return_tensors="pt",
-    )
-    inputs = inputs.to("cuda")
-
-    # 生成输出
-    generated_ids, pred_masks = model.generate(original_images=image_inputs, **inputs, max_new_tokens=128)
-    generated_ids_trimmed = [
-        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-    ]
-    output_text = processor.batch_decode(
-        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-    )
-    # output_text = processor.batch_decode(
-    #     generated_ids_trimmed, skip_special_tokens=False, clean_up_tokenization_spaces=False
-    # )
-    image_np = np.array(image_inputs[0])
-    pred_mask = pred_masks[0][0].to(bool).cpu().numpy()
-    highlight = np.zeros_like(image_np, dtype=np.uint8)
-    highlight[pred_mask] = (255, 0, 0)
-    # 将高亮遮罩与原图叠加
-    highlighted_image = cv2.addWeighted(image_np, 0.5, highlight, 0.5, 0)
-    return output_text[0], highlighted_image
-
 
 # TODO: Make this iterable datasets compatible with multi batch size
 def main(training_args, model_args, script_args):
@@ -126,30 +92,35 @@ def main(training_args, model_args, script_args):
     # 开启模型训练
     trainer.train()
 
+    # 训练结束
+    if enable_parallel:
+        torch.distributed.barrier()
     if rank == 0:
-        torch.save(peft_model.base_model.text_hidden_fcs.state_dict(),
-                   os.path.join(training_args.output_dir, "text_hidden_fcs_params.pt"))
-
+        model = peft_model.merge_and_unload()
+        torch.save(model.state_dict(),
+                   os.path.join(training_args.output_dir, "video-lisa.pt"))
         # Eval
-        origin_image_path = os.path.join(script_args.data_root["ade20k"], "images/training/ADE_train_00000001.jpg")
-        messages = [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "image": origin_image_path
-                },
-                {
-                    "type": "text",
-                    "text": "Can you segment the floor in this image?"
-                }
-            ]}]
+        with torch.no_grad():
+            origin_image_path = os.path.join(script_args.data_root["ade20k"], "images/training/ADE_train_00000001.jpg")
+            messages = [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": origin_image_path
+                    },
+                    {
+                        "type": "text",
+                        "text": "Can you segment the floor in this image?"
+                    }
+                ]}]
 
-        response, image = predict(messages, peft_model, processor)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        cv2.imwrite("output/image.png", image.astype(np.uint8))
-        messages.append({"role": "assistant", "content": f"{response}"})
-        print(messages[-1])
+            response, image = predict_seg(messages, model, processor)
+            if image is not None:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                cv2.imwrite("output/image.png", image.astype(np.uint8))
+            messages.append({"role": "assistant", "content": f"{response}"})
+            print(messages[-1])
 
 
 if __name__ == "__main__":

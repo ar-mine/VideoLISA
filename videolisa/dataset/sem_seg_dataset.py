@@ -125,7 +125,7 @@ class SemSegDataset(torch.utils.data.Dataset):
                     "content": [
                         {
                             "type": "image",
-                            "image": f"{image_path}",
+                            "image": image_path,
                             "resized_height": 280,
                             "resized_width": 280,
                         },

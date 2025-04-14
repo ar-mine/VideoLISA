@@ -99,6 +99,8 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         self.sam = None
         self.text_hidden_fcs = None
 
+        self.enable_segmentation = False
+
     def init_sam_module(self, model_path):
         # TODO: Apply lora only on LLM
         # SAM Initialization
@@ -144,6 +146,25 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             second_per_grid_ts: Optional[torch.Tensor] = None,
     ) -> tuple | Qwen2_5_VLCausalLMOutputWithPast | VideoLISACausalLMOutputWithPast:
 
+        if not self.enable_segmentation:
+            return super().forward(input_ids=input_ids,
+                                 attention_mask=attention_mask,
+                                 position_ids=position_ids,
+                                 past_key_values=past_key_values,
+                                 inputs_embeds=inputs_embeds,
+                                 labels=labels,
+                                 use_cache=use_cache,
+                                 output_attentions=output_attentions,
+                                 return_dict=return_dict,
+                                 pixel_values=pixel_values,
+                                 pixel_values_videos=pixel_values_videos,
+                                 image_grid_thw=image_grid_thw,
+                                 video_grid_thw=video_grid_thw,
+                                 rope_deltas=rope_deltas,
+                                 cache_position=cache_position,
+                                 second_per_grid_ts=second_per_grid_ts,
+                                 output_hidden_states=False,
+                                 )
         outputs = super().forward(input_ids=input_ids,
                                   attention_mask=attention_mask,
                                   position_ids=position_ids,
@@ -389,7 +410,7 @@ class LISATrainer(Trainer):
 
         with self.compute_loss_context_manager():
             loss, outputs = self.compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
-        if self.state.global_step % self.args.logging_steps == 0:
+        if self.state.global_step % self.args.logging_steps == 0 and "ce_loss" in outputs.keys():
             extra_metrics = {"ce_loss": outputs["ce_loss"].item(),
                              "mask_bce_loss": outputs["mask_bce_loss"].item(),
                              "mask_dice_loss": outputs["mask_dice_loss"].item()}

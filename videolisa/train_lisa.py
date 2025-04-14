@@ -43,6 +43,7 @@ def main(training_args, model_args, script_args):
             attn_implementation="flash_attention_2",
             device_map="auto",
         )
+    model.enable_segmentation = True
     model.init_sam_module(model_path=script_args.sam_model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
     tokenizer.add_tokens("<seg>", special_tokens=False)

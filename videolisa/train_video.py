@@ -74,6 +74,14 @@ def main(training_args, model_args, script_args):
     # 开启模型训练
     trainer.train()
 
+    # 训练结束
+    if enable_parallel:
+        torch.distributed.barrier()
+    if rank == 0:
+        model = peft_model.merge_and_unload()
+        torch.save(model.state_dict(),
+                   os.path.join(training_args.output_dir, "video.pt"))
+
 if __name__ == "__main__":
     parser = TrlParser((TrainingArguments, ModelArguments, ScriptArguments))
     training_args, model_args, script_args = parser.parse_args_and_config()

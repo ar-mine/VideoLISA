@@ -19,19 +19,31 @@ tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remot
 processor = AutoProcessor.from_pretrained(model_path)
 
 # Step 2: Load weights from ckpt
-model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/Video/video-lisa.pt")
-model.load_state_dict(model_params)
+from peft import LoraConfig, TaskType, get_peft_model, PeftModel
+config = LoraConfig(
+    task_type=TaskType.CAUSAL_LM,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    inference_mode=False,  # 训练模式
+    r=64,
+    lora_alpha=16,
+    lora_dropout=0.05,
+    bias="none",
+)
+model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/Video/checkpoint-2639", config=config)
+# model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/Video/video-lisa.pt")
+# model.load_state_dict(model_params)
 
 # Step 3: Load evaluated video
 num_eval_examples = 10
-video_paths = json.load(open("/media/automan/6E94666294662CB1/A_Content/SSv2/labels/validation.json"))
-for video_path in video_paths[:num_eval_examples]:
+video_infos = json.load(open("/media/automan/6E94666294662CB1/A_Content/SSv2/labels/train.json"))
+for video_info in video_infos[:num_eval_examples]:
+    video_path = "/media/automan/6E94666294662CB1/A_Content/SSv2/20bn-something-something-v2/" + video_info["id"] + ".webm"
     messages = [{
         "role": "user",
         "content": [
             {
                 "type": "video",
-                "image": video_path
+                "video": video_path
             },
             {
                 "type": "text",
@@ -41,4 +53,4 @@ for video_path in video_paths[:num_eval_examples]:
 
     response, _ = predict(messages, model, processor)
     messages.append({"role": "assistant", "content": f"{response}"})
-    print(messages[-1])
+    print(f"Id: " + video_info["id"] + str(messages[-1]))

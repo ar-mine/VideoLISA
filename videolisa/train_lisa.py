@@ -13,7 +13,7 @@ from dataset.sem_seg_dataset import SemSegDataset
 from dataset.dataset import DataCollatorForLISA
 from trl import TrlParser
 from peft import LoraConfig, TaskType, get_peft_model
-from utils import ModelArguments, ScriptArguments, find_linear_layers, predict_seg
+from utils import ModelArguments, ScriptArguments, find_linear_layers, predict
 
 global rank
 
@@ -116,7 +116,7 @@ def main(training_args, model_args, script_args):
                     }
                 ]}]
 
-            response, image = predict_seg(messages, model, processor)
+            response, image = predict(messages, model, processor)
             if image is not None:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 cv2.imwrite("output/image.png", image.astype(np.uint8))

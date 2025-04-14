@@ -18,6 +18,14 @@ ANSWER_LIST = [
     "<seg>.",
 ]
 
+SSV2_QUESTION_LIST = [
+    "Output the action shown in the video with its interacting objects in JSON format and it should contains 'action' and 'objects' as keys.",
+    "Generate the action depicted in the video along with its interacting objects in JSON format, including 'action' and 'objects' as keys.",
+    "Produce the action shown in the video and its related objects in JSON format, with 'action' and 'objects' as keys."
+    "Output the action from the video and the objects involved in JSON format, containing 'action' and 'objects' as keys."
+    "Create a JSON representation of the action in the video and its interacting objects, using 'action' and 'objects' as keys."
+]
+
 @dataclass
 class ModelArguments:
     model_name_or_path: str = field()
@@ -52,7 +60,7 @@ def find_linear_layers(model, lora_target_modules, excluded_prefix):
             lora_module_names.add(name)
     return sorted(list(lora_module_names))
 
-def predict_seg(messages, model, processor):
+def predict(messages, model, processor):
     # 准备推理
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, video_inputs = process_vision_info(messages)

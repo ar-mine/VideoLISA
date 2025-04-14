@@ -7,7 +7,7 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, Auto
 from qwen_vl_utils import process_vision_info
 from model.VideoLISA import VideoLISA
 from peft import LoraConfig, TaskType, get_peft_model, PeftModel
-from utils import ModelArguments, ScriptArguments, predict_seg
+from utils import ModelArguments, ScriptArguments, predict
 
 def process_func(example):
     """
@@ -107,7 +107,7 @@ messages = [{
         }
     ]}]
 
-response, image = predict_seg(messages, model, processor)
+response, image = predict(messages, model, processor)
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 cv2.imwrite("output/image.png", image.astype(np.uint8))
 messages.append({"role": "assistant", "content": f"{response}"})

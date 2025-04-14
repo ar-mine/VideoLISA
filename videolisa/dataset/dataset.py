@@ -1,13 +1,14 @@
 import numpy as np
+import itertools
 from dataclasses import dataclass
 from transformers import DataCollatorForSeq2Seq
 from transformers.utils import PaddingStrategy
 from transformers.data.data_collator import pad_without_fast_tokenizer_warning
+import torch
 
 
 @dataclass
 class DataCollatorForLISA(DataCollatorForSeq2Seq):
-
     def __call__(self, features, return_tensors=None):
         if return_tensors is None:
             return_tensors = self.return_tensors
@@ -19,7 +20,33 @@ class DataCollatorForLISA(DataCollatorForSeq2Seq):
         if labels is not None and all(label is None for label in labels):
             labels = None
 
-        special_keys = ["original_images", "gt_masks"]
+        # Videos Concat
+        videos = list(
+            itertools.chain(
+                *(
+                    feature["pixel_values_videos"]
+                    for feature in features
+                    if "pixel_values_videos" in feature
+                )
+            )
+        )
+        if len(videos) != 0:
+            concat_videos = torch.cat([video for video in videos], dim=0)
+            video_grid_thw = list(
+                itertools.chain(
+                    *(
+                        feature["video_grid_thw"]
+                        for feature in features
+                        if "video_grid_thw" in feature
+                    )
+                )
+            )
+            video_grid_thw = torch.stack(video_grid_thw, dim=0)
+        else:
+            concat_videos = None
+            video_grid_thw = None
+
+        special_keys = ["original_images", "gt_masks", "video_grid_thw", "pixel_values_videos"]
         special_features = {}
         for s_key in special_keys:
             special_features[s_key] = [feature[s_key] for feature in features]
@@ -83,7 +110,6 @@ class DataCollatorForLISA(DataCollatorForSeq2Seq):
         # reintroduce side effects via tokenizer that return respective datatypes for the `return_tensors` argument
         if batch.get("labels", None) is not None:
             if return_tensors == "pt":
-                import torch
                 # batch["labels"] = torch.cat(batch["labels"]).to(dtype=torch.int64)
                 batch["labels"] = torch.tensor(np.array(batch["labels"]), dtype=torch.int64)
             elif return_tensors == "tf":
@@ -103,5 +129,9 @@ class DataCollatorForLISA(DataCollatorForSeq2Seq):
         ):
             decoder_input_ids = self.model.prepare_decoder_input_ids_from_labels(labels=batch["labels"])
             batch["decoder_input_ids"] = decoder_input_ids
+
+        # Prepare batch
+        batch["pixel_values_videos"] = concat_videos
+        batch["video_grid_thw"] = video_grid_thw
 
         return batch

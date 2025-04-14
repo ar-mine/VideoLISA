@@ -1,11 +1,7 @@
 import os
 import random
 import json
-
-import numpy as np
 import torch
-from decord import VideoReader, cpu  # 用于视频加载
-from PIL import Image
 
 from qwen_vl_utils import process_vision_info, fetch_video
 
@@ -57,7 +53,7 @@ class VideoDataset(torch.utils.data.Dataset):
             tokenizer,
             precision: str = "fp32",
             split: str = "train",
-            num_frames: int = 16,
+            max_frames: int = 12,
     ):
         """
         初始化数据集。
@@ -75,7 +71,7 @@ class VideoDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.precision = precision
         self.split = split
-        self.num_frames = num_frames
+        self.max_frames = max_frames
 
         # 初始化数据集
         self.label_map, self.video_paths, self.labels = init_ssv2(
@@ -126,9 +122,9 @@ class VideoDataset(torch.utils.data.Dataset):
                     {
                         "type": "video",
                         "video": video_path,
-                        "resized_height": 280,
-                        "resized_width": 280,
-                        "nframes": 20,
+                        "fps": 2,
+                        "min_frames": 2,
+                        "max_frames": self.max_frames,
                     },
                     {
                         "type": "text",
@@ -190,9 +186,9 @@ class VideoDataset(torch.utils.data.Dataset):
         if "image_grid_thw" in inputs:
             output_dict["image_grid_thw"] = torch.tensor(inputs["image_grid_thw"]).squeeze(0)
         if "pixel_values_videos" in inputs:
-            output_dict["pixel_values_videos"] = torch.tensor(inputs["pixel_values_videos"])
+            output_dict["pixel_values_videos"] = [torch.tensor(inputs["pixel_values_videos"])]
         if "video_grid_thw" in inputs:
-            output_dict["video_grid_thw"] = torch.tensor(inputs["video_grid_thw"]).squeeze(0)
+            output_dict["video_grid_thw"] = [torch.tensor(inputs["video_grid_thw"]).squeeze(0)]
         return output_dict
 
 

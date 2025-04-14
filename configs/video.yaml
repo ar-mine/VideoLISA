@@ -42,7 +42,7 @@ num_train_epochs: 1
 output_dir: output/Video
 overwrite_output_dir: true
 per_device_eval_batch_size: 1
-per_device_train_batch_size: 1
+per_device_train_batch_size: 2
 push_to_hub: false
 report_to:
 - none

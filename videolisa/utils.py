@@ -46,6 +46,7 @@ class ScriptArguments:
     train_dataset_path: str = field()
     val_dataset_type: str = field()
     val_dataset_path: str = field()
+    resume: bool = field()
 
 def find_linear_layers(model, lora_target_modules, excluded_prefix):
     cls = torch.nn.Linear

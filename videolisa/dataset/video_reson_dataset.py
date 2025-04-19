@@ -41,17 +41,48 @@ def init_ssv2(base_data_dir, split="train"):
     return ssv2_classes, ssv2_videos, ssv2_labels
 
 
-class VideoDataset(torch.utils.data.Dataset):
+def init_activitynet(base_data_dir, split="train"):
     """
-    Something-Something 数据集的 PyTorch Dataset 类，与 Qwen2.5-VL 兼容。
-    """
+    初始化 ActivityNet 数据集，加载元数据并构建视频路径。
 
+    参数：
+        base_data_dir (str): 包含 'v1-2', 'v1-3' 和 'labels' 文件夹以及'index.json'的基础目录。
+        split (str): 数据集划分（'train'、'val' 或 'test'）。
+
+    返回：
+        label_map (dict): 标签ID到标签名称的映射。
+        video_paths (list): 视频文件路径列表。
+        labels (list): 对应的标签ID列表。
+    """
+    split_map = {"train": "train.json", "val": "val.json", "test": "test.json"}
+    split_file = split_map[split]
+
+    # Load path mapping
+    with open(os.path.join(base_data_dir, "index.json"), "r") as f:
+        path_index = json.load(f)
+
+    # 加载特定划分的元数据
+    with open(os.path.join(base_data_dir, "labels", split_file), "r") as f:
+        data = json.load(f)
+
+    # 构建视频路径和标签
+    activitynet_labels, activitynet_videos = [], []
+    for key, value in data.items():
+        activitynet_videos.append(os.path.join(base_data_dir, path_index[key]))
+        activitynet_labels.append(value)
+
+    print(f"ActivityNet ({split}): {len(activitynet_videos)} videos")
+    return None, activitynet_videos, activitynet_labels
+
+
+class VideoDataset(torch.utils.data.Dataset):
     def __init__(
             self,
             base_data_dir,
             processor,
             tokenizer,
             precision: str = "fp32",
+            video_data="activitynet",  # ssv2, activitynet
             split: str = "train",
             max_frames: int = 12,
     ):
@@ -73,11 +104,23 @@ class VideoDataset(torch.utils.data.Dataset):
         self.split = split
         self.max_frames = max_frames
 
+        self.data2list = {}
+        self.data2classes = {}
+
         # 初始化数据集
-        self.label_map, self.video_paths, self.labels = init_ssv2(
-            base_data_dir["ssv2"], split
-        )
-        self.length = len(self.video_paths)
+        # Initialize dataset index
+        self.video_datas = video_data.split("||")
+        for ds in self.video_datas:
+            classes, video_paths, labels = eval("init_{}".format(ds))(base_data_dir[ds])
+            self.data2list[ds] = (video_paths, labels)
+            self.data2classes[ds] = classes
+
+        # self.label_map, self.video_paths, self.labels = init_ssv2(
+        #     base_data_dir["ssv2"], split
+        # )
+        # self.length = len(self.video_paths)
+
+        self.length = 0
 
         # 问题和回答列表占位符（可根据需要自定义）
         self.short_question_list = [
@@ -89,32 +132,24 @@ class VideoDataset(torch.utils.data.Dataset):
         ]
 
     def __len__(self):
-        """
-        返回数据集中视频的总数。
-
-        返回：
-            int: 数据集长度。
-        """
-        return self.length
+        if self.length == 0:
+            for ds in self.video_datas:
+                self.length += len(self.data2list[ds][0])
+            ret = self.length
+        else:
+            ret = self.length
+        return ret
 
     def __getitem__(self, idx):
-        """
-        获取并处理数据集中的单个样本。
+        # Select from random dataset
+        ds = random.randint(0, len(self.video_datas) - 1)
+        ds = self.video_datas[ds]
+        video_paths, labels = self.data2list[ds]
 
-        参数：
-            idx (int): 样本索引。
-
-        返回：
-            dict: 包含 input_ids、attention_mask、labels 等模型输入的字典。
-        """
         # 获取视频路径和标签
-        video_path = self.video_paths[idx]
-        label = self.labels[idx]
-        #label_text = self.label_map[str(label)]
+        video_path = video_paths[idx]
+        label = labels[idx]
 
-        # 为 Qwen2.5-VL 构建消息
-        output_content = json.dumps(label)
-        response = self.tokenizer(f"{output_content}", add_special_tokens=False)
         messages = [
             {
                 "role": "user",
@@ -128,17 +163,42 @@ class VideoDataset(torch.utils.data.Dataset):
                     },
                     {
                         "type": "text",
-                        "text": random.choice(self.short_question_list),
+                        "text": "",
                     },
                 ],
             }
         ]
+        if ds in ["activitynet"]:
+            video_input, video_sample_fps = fetch_video({
+                                                        "video": video_path,
+                                                        "fps": 2,
+                                                        "min_frames": 2,
+                                                        "max_frames": self.max_frames,
+                                                         },
+                                                        return_video_sample_fps=True)
+            image_input = None
+            label_temp = []
+            for t, s in zip(label["timestamps"], label["sentences"]):
+                # Ignore moment with only one frame
+                if t[1] - t[0] < 1/video_sample_fps:
+                    continue
+                label_temp.append({"description": s,
+                                   "time": [int(t[0]*video_sample_fps), int(t[1]*video_sample_fps)]})
+            label = label_temp
+            messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'description' and 'time' as keys."
+        else:
+            image_input, video_input = process_vision_info(messages)
+            messages[0]["content"][1]["text"] = random.choice(self.short_question_list)
+        # 为 Qwen2.5-VL 构建消息
+        output_content = json.dumps(label)
+        response = self.tokenizer(f"{output_content}", add_special_tokens=False)
+
 
         # 处理消息
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        image_input, video_input = process_vision_info(messages)
+
         inputs = self.processor(
             text=[text],
             images=image_input,

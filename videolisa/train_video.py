@@ -14,7 +14,8 @@ global rank
 
 # TODO: Make this iterable datasets compatible with multi batch size
 def main(training_args, model_args, script_args):
-    # 确保分布式环境已初始化
+    ## Step 1: Initialization
+    # Initialize Distributed Training
     global rank
     if dist.is_available() and dist.is_initialized():
         rank = dist.get_rank()
@@ -22,10 +23,10 @@ def main(training_args, model_args, script_args):
     else:
         rank = 0
         enable_parallel = False
-    # Init wandb
+    # Initialize wandb
     if rank == 0:
         wandb.init(mode="offline", project="videolisa")
-    # 配置Backbone
+    # Initialize Backbone
     model_path = model_args.model_name_or_path
     if enable_parallel:
         model = VideoLISA.from_pretrained(
@@ -41,13 +42,13 @@ def main(training_args, model_args, script_args):
             device_map="auto",
         )
     if script_args.resume:
-        model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/Video/video.pt")
+        model_params = torch.load(os.path.join(training_args.output_dir, "video.pt"))
         model.load_state_dict(model_params)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)\
+    # TODO: Enable fast processor
     processor = AutoProcessor.from_pretrained(model_path)
-    model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
-
-    # 配置LoRA
+    model.enable_input_require_grads()  # executed when the gradient checkpoint is turned on
+    # Initialize Lora
     config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         target_modules=model_args.target_modules,
@@ -61,28 +62,32 @@ def main(training_args, model_args, script_args):
     if rank == 0:
         peft_model.print_trainable_parameters()
 
+    ## Step 2: Load dataset
     train_dataset = VideoDataset(base_data_dir=script_args.data_root,
                                  max_frames=script_args.max_frames,
                                  processor=processor, tokenizer=tokenizer)
 
-    # 配置Trainer
+    ## Step 3: Config Trainer and Execute training
     trainer = LISATrainer(
         model=peft_model,
         args=training_args,
         train_dataset=train_dataset,
         data_collator=DataCollatorForLISA(tokenizer=tokenizer, padding=True),
     )
-
-    # 开启模型训练
     trainer.train()
 
-    # 训练结束
+    ## Step 4: Postprocess the Training
     if enable_parallel:
         torch.distributed.barrier()
+    # Save the merged model
     if rank == 0:
         model = peft_model.merge_and_unload()
-        torch.save(model.state_dict(),
-                   os.path.join(training_args.output_dir, "video.pt"))
+        if script_args.resume:
+            torch.save(model.state_dict(),
+                       os.path.join(training_args.output_dir, "video-r.pt"))
+        else:
+            torch.save(model.state_dict(),
+                       os.path.join(training_args.output_dir, "video.pt"))
 
 if __name__ == "__main__":
     parser = TrlParser((TrainingArguments, ModelArguments, ScriptArguments))

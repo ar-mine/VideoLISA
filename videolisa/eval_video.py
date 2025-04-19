@@ -30,12 +30,12 @@ processor = AutoProcessor.from_pretrained(model_path)
 #     bias="none",
 # )
 # model = PeftModel.from_pretrained(model, model_id="/media/automan/ExSpace/Projects/VideoLISA/output/Video/checkpoint-2639", config=config)
-model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/Video/video.pt")
+model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/frame-12-ep-1-bs-16-lora-64-mb/video.pt")
 model.load_state_dict(model_params)
 
 # Step 3: Load evaluated video
-num_eval_examples = 10
-video_infos = json.load(open("/media/automan/6E94666294662CB1/A_Content/SSv2/labels/train.json"))
+num_eval_examples = 100
+video_infos = json.load(open("/media/automan/6E94666294662CB1/A_Content/SSv2/labels/validation.json"))
 success, total = 0, 0
 for video_info in video_infos[:num_eval_examples]:
     video_path = "/media/automan/6E94666294662CB1/A_Content/SSv2/20bn-something-something-v2/" + video_info["id"] + ".webm"

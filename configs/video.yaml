@@ -1,5 +1,5 @@
 # Script arguments
-max_frames: 12
+max_frames: 6
 data_root:
   ade20k: /media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016
   ssv2: /media/automan/6E94666294662CB1/A_Content/SSv2
@@ -7,7 +7,7 @@ data_root:
 train_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/train-10000.json
 val_dataset_type: internvid # internvid or activitynet
 val_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/filtered_dataset.json
-dataloader_num_workers: 12
+dataloader_num_workers: 1
 
 # Model config
 ## Backbone part
@@ -27,7 +27,7 @@ bf16: true
 do_eval: true
 eval_strategy: "no"
 eval_steps: 100
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 1
 gradient_checkpointing: true      # If false, it will ocupy much memory
 #gradient_checkpointing_kwargs:
 #  use_reentrant: false

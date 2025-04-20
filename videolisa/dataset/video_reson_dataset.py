@@ -181,23 +181,25 @@ class VideoDataset(torch.utils.data.Dataset):
             # 0: Dense Captioning; 1: Event Captioning; 2: Temporal Grounding
             task_id = random.randint(0, 2)
             if task_id == 0:
-                for t, s in zip(label["timestamps"], label["sentences"]):
+                for (s, e), sent in zip(label["timestamps"], label["sentences"]):
                     # Ignore moment with only one frame
-                    if t[1] - t[0] < 1/video_sample_fps:
+                    if e - s < 1/video_sample_fps:
                         continue
-                    label_temp.append({"description": s,
-                                       "time": [int(t[0]*video_sample_fps), int(t[1]*video_sample_fps)]})
+                    label_temp.append({"description": sent,
+                                       "time": [int(s*video_sample_fps), int(e*video_sample_fps)]})
                 label = label_temp
                 messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'description' and 'time' as keys."
             elif task_id == 1:
                 idx = random.randint(0, len(label["timestamps"]) - 1)
                 s, e = label["timestamps"][idx]
+                s, e = int(s*video_sample_fps), int(e*video_sample_fps)
                 label = label["sentences"][idx]
                 messages[0]["content"][1]["text"] = f"Can you describe what occurred from {s} to {e} in the video?"
             elif task_id == 2:
                 idx = random.randint(0, len(label["timestamps"]) - 1)
                 sent = label["sentences"][idx]
-                label = label["timestamps"][idx]
+                s, e = label["timestamps"][idx]
+                label = [int(s*video_sample_fps), int(e*video_sample_fps)]
                 messages[0]["content"][1]["text"] = f"During which frames can we see '{sent}' happening in the video?"
         else:
             image_input, video_input = process_vision_info(messages)

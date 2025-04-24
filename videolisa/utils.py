@@ -64,7 +64,7 @@ def find_linear_layers(model, lora_target_modules, excluded_prefix):
 def predict(messages, model, processor):
     # 准备推理
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, video_inputs = process_vision_info(messages)
+    image_inputs, video_inputs, fps = process_vision_info(messages, return_video_kwargs=True)
     inputs = processor(
         text=[text],
         images=image_inputs,
@@ -93,4 +93,36 @@ def predict(messages, model, processor):
         highlighted_image = cv2.addWeighted(image_np, 0.5, highlight, 0.5, 0)
     else:
         highlighted_image = None
-    return output_text[0], highlighted_image
+    return output_text[0], highlighted_image, fps
+
+
+def calculate_iou(start_A, end_A, start_B, end_B):
+    """
+    Calculate the Intersection over Union (IoU) for two time intervals.
+
+    Parameters:
+    start_A (float): Start time of the first interval.
+    end_A (float): End time of the first interval.
+    start_B (float): Start time of the second interval.
+    end_B (float): End time of the second interval.
+
+    Returns:
+    float: The IoU value for the two intervals.
+    """
+    # Ensure that start < end for each interval
+    if start_A >= end_A or start_B >= end_B:
+        raise ValueError("Invalid intervals: start time must be less than end time.")
+
+    # Calculate intersection
+    intersection_start = max(start_A, start_B)
+    intersection_end = min(end_A, end_B)
+    intersection = max(0, intersection_end - intersection_start)
+
+    # Calculate union
+    union = (end_A - start_A) + (end_B - start_B) - intersection
+
+    # Calculate IoU
+    if union == 0:
+        return 0.0  # If both intervals have zero length, IoU is 0
+    else:
+        return intersection / union

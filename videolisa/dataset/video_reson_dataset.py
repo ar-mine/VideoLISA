@@ -185,10 +185,10 @@ class VideoDataset(torch.utils.data.Dataset):
                     # Ignore moment with only one frame
                     if e - s < 1/video_sample_fps:
                         continue
-                    label_temp.append({"description": sent,
-                                       "time": [int(s*video_sample_fps), int(e*video_sample_fps)]})
+                    label_temp.append({"sentence": sent,
+                                       "timestamp": [int(s*video_sample_fps), int(e*video_sample_fps)]})
                 label = label_temp
-                messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'description' and 'time' as keys."
+                messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'sentence' and 'timestamp' as keys."
             elif task_id == 1:
                 idx = random.randint(0, len(label["timestamps"]) - 1)
                 s, e = label["timestamps"][idx]
@@ -200,7 +200,7 @@ class VideoDataset(torch.utils.data.Dataset):
                 sent = label["sentences"][idx]
                 s, e = label["timestamps"][idx]
                 label = [int(s*video_sample_fps), int(e*video_sample_fps)]
-                messages[0]["content"][1]["text"] = f"During which frames can we see '{sent}' happening in the video?"
+                messages[0]["content"][1]["text"] = f"During which frames can we see '{sent[:-1]}' happening in the video?"
         else:
             image_input, video_input = process_vision_info(messages)
             messages[0]["content"][1]["text"] = random.choice(self.short_question_list)

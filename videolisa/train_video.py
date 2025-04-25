@@ -65,7 +65,7 @@ def main(training_args, model_args, script_args):
     ## Step 2: Load dataset
     train_dataset = VideoDataset(base_data_dir=script_args.data_root,
                                  max_frames=script_args.max_frames,
-                                 processor=processor, tokenizer=tokenizer)
+                                 processor=processor, tokenizer=tokenizer, enable_cvt=False)
 
     ## Step 3: Config Trainer and Execute training
     trainer = LISATrainer(

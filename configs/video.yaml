@@ -3,7 +3,7 @@ max_frames: 6
 data_root:
   ade20k: /media/automan/6E94666294662CB1/A_Content/Datasets/ADEChallengeData2016
   ssv2: /media/automan/6E94666294662CB1/A_Content/SSv2
-  activitynet: /media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet2
+  activitynet: /media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions
 train_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/train-10000.json
 val_dataset_type: internvid # internvid or activitynet
 val_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/filtered_dataset.json

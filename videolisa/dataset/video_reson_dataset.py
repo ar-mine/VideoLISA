@@ -85,6 +85,7 @@ class VideoDataset(torch.utils.data.Dataset):
             video_data="activitynet",  # ssv2, activitynet
             split: str = "train",
             max_frames: int = 12,
+            enable_cvt: bool = False,
     ):
         """
         初始化数据集。
@@ -103,6 +104,7 @@ class VideoDataset(torch.utils.data.Dataset):
         self.precision = precision
         self.split = split
         self.max_frames = max_frames
+        self.enable_cvt = enable_cvt
 
         self.data2list = {}
         self.data2classes = {}
@@ -182,24 +184,31 @@ class VideoDataset(torch.utils.data.Dataset):
             task_id = random.randint(0, 2)
             if task_id == 0:
                 for (s, e), sent in zip(label["timestamps"], label["sentences"]):
-                    # Ignore moment with only one frame
-                    if e - s < 1/video_sample_fps:
-                        continue
+                    if self.enable_cvt:
+                        # Ignore moment with only one frame
+                        if e - s < 1/video_sample_fps:
+                            continue
+                        s = int(s*video_sample_fps)
+                        e = int(e*video_sample_fps)
                     label_temp.append({"sentence": sent,
-                                       "timestamp": [int(s*video_sample_fps), int(e*video_sample_fps)]})
+                                       "timestamp": [s, e]})
                 label = label_temp
                 messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'sentence' and 'timestamp' as keys."
             elif task_id == 1:
                 idx = random.randint(0, len(label["timestamps"]) - 1)
                 s, e = label["timestamps"][idx]
-                s, e = int(s*video_sample_fps), int(e*video_sample_fps)
+                if self.enable_cvt:
+                    s, e = int(s*video_sample_fps), int(e*video_sample_fps)
                 label = label["sentences"][idx]
                 messages[0]["content"][1]["text"] = f"Can you describe what occurred from {s} to {e} in the video?"
             elif task_id == 2:
                 idx = random.randint(0, len(label["timestamps"]) - 1)
                 sent = label["sentences"][idx]
                 s, e = label["timestamps"][idx]
-                label = [int(s*video_sample_fps), int(e*video_sample_fps)]
+                if self.enable_cvt:
+                    s = int(s*video_sample_fps)
+                    e = int(e*video_sample_fps)
+                label = [s, e]
                 messages[0]["content"][1]["text"] = f"During which frames can we see '{sent[:-1]}' happening in the video?"
         else:
             image_input, video_input = process_vision_info(messages)

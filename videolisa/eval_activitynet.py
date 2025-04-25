@@ -4,7 +4,6 @@ import random
 import torch
 import os
 
-from humanfriendly.terminal import output
 
 from utils import predict, calculate_iou
 from transformers import AutoProcessor, AutoTokenizer
@@ -27,36 +26,39 @@ model.load_state_dict(model_params)
 
 # Step 3: Load evaluated video
 num_eval_examples = 1000
-video_infos = json.load(open("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet2/labels/val_1.json"))
-video_paths = json.load(open("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet2/index.json"))
+video_infos = json.load(open("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions/labels/val_1.json"))
+video_paths = json.load(open("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions/index.json"))
+
+messages = [{
+    "role": "user",
+    "content": [
+        {
+            "type": "video",
+            "video": "",
+            "fps": 2,
+            "min_frames": 2,
+            "max_frames": 16,
+        },
+        {
+            "type": "text",
+            "text": ""
+        }
+    ]}]
 
 def temporal_grounding():
     total_iou, total_iou_l3, total_iou_l5, total_iou_l7, total = 0, 0, 0, 0, 0
     for k, v in video_infos.items():
-        video_path = os.path.join("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet2/", video_paths[k])
+        video_path = os.path.join("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions/", video_paths[k])
         idx = random.randint(0, len(v["timestamps"]) - 1)
         sent = v["sentences"][idx]
         label = v["timestamps"][idx]
-        messages = [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "video",
-                    "video": video_path,
-                    "fps": 2,
-                    "min_frames": 2,
-                    "max_frames": 24,
-                },
-                {
-                    "type": "text",
-                    "text": f"During which frames can we see '{sent}' happening in the video?"
-                }
-            ]}]
 
+        messages[0]["content"][0]["video"] = video_path
+        messages[0]["content"][1]["text"] = f"During which frames can we see '{sent}' happening in the video?"
         response, _, fps = predict(messages, model, processor)
         video_sample_fps = fps["fps"][0]
-        messages.append({"role": "assistant", "content": f"{response}"})
-        s_et = json.loads(messages[-1]['content'])
+        # response_dict = {"role": "assistant", "content": f"{response}"}
+        s_et = json.loads(response)
         s_et = [s_et[0]/video_sample_fps, s_et[1]/video_sample_fps]
         if s_et[0] >= s_et[1] or label[0] >= label[1]:
             continue
@@ -84,29 +86,17 @@ def dense_caption():
     output = {}
     total = 0
     for k, v in video_infos.items():
-        video_path = os.path.join("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet2/", video_paths[k])
+        video_path = os.path.join("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions/", video_paths[k])
         label = v
-        messages = [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "video",
-                    "video": video_path,
-                    "fps": 2,
-                    "min_frames": 2,
-                    "max_frames": 24,
-                },
-                {
-                    "type": "text",
-                    "text": f"Describe the video with its related frame index in JSON format and it should be a list including 'description' and 'time' as keys."
-                }
-            ]}]
+
+        messages[0]["content"][0]["video"] = video_path
+        messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'description' and 'time' as keys."
 
         response, _, fps = predict(messages, model, processor)
         video_sample_fps = fps["fps"][0]
-        messages.append({"role": "assistant", "content": f"{response}"})
+        # messages.append({"role": "assistant", "content": f"{response}"})
         try:
-            results = json.loads(messages[-1]['content'])
+            results = json.loads(response)
         except:
             continue
         for r in results:
@@ -118,7 +108,7 @@ def dense_caption():
         if total > num_eval_examples:
             break
     output_dict = {"results": output}
-    json.dump(output_dict, open("results.json", "w"))
+    json.dump(output_dict, open("results-16.json", "w"))
 
 if __name__ == "__main__":
     dense_caption()

@@ -4,7 +4,7 @@ decorator==4.0.2 # 4.4.2 is not compatible with moviepy
 numpy<2
 yt-dlp
 ffmpeg-python
-transformers==4.50.0.dev0 # Fix Qwen2.5 bug
+transformers==4.51.0 # Fix Qwen2.5 bug
 peft
 flash-attn
 decord

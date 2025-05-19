@@ -42,6 +42,7 @@ class ScriptArguments:
         metadata={'help': 'Max number of frames to process'},
     )
     data_root: str = field()
+    datasets: str = field()
     sam_model_path: str = field()
     train_dataset_path: str = field()
     val_dataset_type: str = field()

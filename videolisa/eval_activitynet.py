@@ -9,6 +9,11 @@ from utils import predict, calculate_iou
 from transformers import AutoProcessor, AutoTokenizer
 from model.VideoLISA import VideoLISA
 
+
+MAX_FRAMES = 24
+ENABLE_CVT = False
+num_eval_examples = 10
+
 # Step 1: Load original model
 model_path = "Qwen/Qwen2.5-VL-3B-Instruct"
 model = VideoLISA.from_pretrained(
@@ -21,11 +26,10 @@ tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remot
 processor = AutoProcessor.from_pretrained(model_path)
 
 # Step 2: Load weights from ckpt
-model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/frame-24-ep-4-bs-64-lora-128-s1/video.pt")
+model_params = torch.load("/media/automan/ExSpace/Projects/VideoLISA/output/frame-24-ep-4-bs-64-lora-128-s1-wo/video.pt")
 model.load_state_dict(model_params)
 
 # Step 3: Load evaluated video
-num_eval_examples = 1000
 video_infos = json.load(open("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions/labels/val_1.json"))
 video_paths = json.load(open("/media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions/index.json"))
 
@@ -37,7 +41,7 @@ messages = [{
             "video": "",
             "fps": 2,
             "min_frames": 2,
-            "max_frames": 16,
+            "max_frames": MAX_FRAMES,
         },
         {
             "type": "text",
@@ -59,7 +63,8 @@ def temporal_grounding():
         video_sample_fps = fps["fps"][0]
         # response_dict = {"role": "assistant", "content": f"{response}"}
         s_et = json.loads(response)
-        s_et = [s_et[0]/video_sample_fps, s_et[1]/video_sample_fps]
+        if ENABLE_CVT:
+            s_et = [s_et[0]/video_sample_fps, s_et[1]/video_sample_fps]
         if s_et[0] >= s_et[1] or label[0] >= label[1]:
             continue
         iou = calculate_iou(s_et[0], s_et[1], label[0], label[1])
@@ -90,7 +95,7 @@ def dense_caption():
         label = v
 
         messages[0]["content"][0]["video"] = video_path
-        messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'description' and 'time' as keys."
+        messages[0]["content"][1]["text"] = "Describe the video with its related frame index in JSON format and it should be a list including 'sentence' and 'timestamp' as keys."
 
         response, _, fps = predict(messages, model, processor)
         video_sample_fps = fps["fps"][0]
@@ -99,8 +104,9 @@ def dense_caption():
             results = json.loads(response)
         except:
             continue
-        for r in results:
-            r['time'] = [r['time'][0]/video_sample_fps, r['time'][1]/video_sample_fps]
+        if ENABLE_CVT:
+            for r in results:
+                r['time'] = [r['time'][0]/video_sample_fps, r['time'][1]/video_sample_fps]
         print(f"Id: " + k + str(messages[-1]) + str(results))
         print(f"Gt: " + k + ":" + str(label))
         output[k] = results
@@ -108,7 +114,8 @@ def dense_caption():
         if total > num_eval_examples:
             break
     output_dict = {"results": output}
-    json.dump(output_dict, open("results-16.json", "w"))
+    json.dump(output_dict, open(f"results-{MAX_FRAMES}.json", "w"))
 
 if __name__ == "__main__":
+    # temporal_grounding()
     dense_caption()

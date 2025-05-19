@@ -64,6 +64,7 @@ def main(training_args, model_args, script_args):
 
     ## Step 2: Load dataset
     train_dataset = VideoDataset(base_data_dir=script_args.data_root,
+                                 video_data=script_args.datasets,
                                  max_frames=script_args.max_frames,
                                  processor=processor, tokenizer=tokenizer, enable_cvt=False)
 

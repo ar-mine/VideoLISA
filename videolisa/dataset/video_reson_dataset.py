@@ -89,7 +89,25 @@ def init_ssv2Captions(base_data_dir, split="train"):
         activitynet_videos.append(os.path.join(base_data_dir, "videos", "{}.webm".format(str(key))))
         activitynet_labels.append(value)
 
-    print(f"ActivityNet ({split}): {len(activitynet_videos)} videos")
+    print(f"Ssv2Captions ({split}): {len(activitynet_videos)} videos")
+    return None, activitynet_videos, activitynet_labels
+
+
+def init_ego4d(base_data_dir, split="train"):
+    split_map = {"train": "label.json", "val": "label.json", "test": "label.json"}
+    split_file = split_map[split]
+
+    # 加载特定划分的元数据
+    with open(os.path.join(base_data_dir, split_file), "r") as f:
+        data = json.load(f)
+
+    # 构建视频路径和标签
+    activitynet_labels, activitynet_videos = [], []
+    for key, value in data.items():
+        activitynet_videos.append(os.path.join(base_data_dir, "videos", "{}.mp4".format(str(key))))
+        activitynet_labels.append(value)
+
+    print(f"Ego4d ({split}): {len(activitynet_videos)} videos")
     return None, activitynet_videos, activitynet_labels
 
 
@@ -100,7 +118,7 @@ class VideoDataset(torch.utils.data.Dataset):
             processor,
             tokenizer,
             precision: str = "fp32",
-            video_data="ssv2|activitynet|ssv2Captions",  # ssv2, activitynet
+            video_data="ssv2|activitynet|ssv2Captions|ego4d",  # ssv2, activitynet
             split: str = "train",
             max_frames: int = 12,
             enable_cvt: bool = False,

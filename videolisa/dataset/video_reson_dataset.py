@@ -148,10 +148,12 @@ class VideoDataset(torch.utils.data.Dataset):
         # 初始化数据集
         # Initialize dataset index
         self.video_datas = video_data.split("|")
+        self.offset = [0]
         for ds in self.video_datas:
             classes, video_paths, labels = eval("init_{}".format(ds))(base_data_dir[ds])
             self.data2list[ds] = (video_paths, labels)
             self.data2classes[ds] = classes
+            self.offset.append(self.offset[-1]+len(video_paths))
 
         # self.label_map, self.video_paths, self.labels = init_ssv2(
         #     base_data_dir["ssv2"], split
@@ -180,7 +182,14 @@ class VideoDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         # Select from random dataset
-        ds = random.randint(0, len(self.video_datas) - 1)
+        ds = 0
+        for offset in self.offset[1:]:
+            if idx >= offset:
+                ds += 1
+            else:
+                break
+        idx -= self.offset[ds]
+        # ds = random.randint(0, len(self.video_datas) - 1)
         ds = self.video_datas[ds]
         video_paths, labels = self.data2list[ds]
 
@@ -206,7 +215,7 @@ class VideoDataset(torch.utils.data.Dataset):
                 ],
             }
         ]
-        if ds in ["activitynet"]:
+        if ds in ["activitynet", "ssv2Captions", "ego4d"]:
             video_input, video_sample_fps = fetch_video({
                                                         "video": video_path,
                                                         "fps": 2,

@@ -6,7 +6,7 @@ data_root:
   activitynet: /media/automan/6E94666294662CB1/A_Content/Datasets/ActivityNet-Captions
   ssv2Captions: /media/automan/6E94666294662CB1/A_Content/SSv2/captions
   ego4d: /media/automan/6E94666294662CB1/A_Content/Datasets/ego4d_data/captions
-datasets: ego4d
+datasets: ssv2Captions|ego4d
 train_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/train-10000.json
 val_dataset_type: internvid # internvid or activitynet
 val_dataset_path: /media/automan/ExSpace/Projects/VideoLISA/dataset/labels/filtered_dataset.json

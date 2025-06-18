@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from transformers import Qwen2_5_VLForConditionalGeneration
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLCausalLMOutputWithPast
 from transformers.modeling_outputs import ModelOutput
-from .segment_anything import build_sam_vit_h
-from .segment_anything.utils.transforms import ResizeLongestSide
+from videolisa.model.sam2.build_sam import build_sam2_video_predictor
 from transformers import Trainer
 from transformers.utils import (is_torch_mlu_available,
                                 is_torch_mps_available,
@@ -18,9 +17,9 @@ from transformers.utils import (is_torch_mlu_available,
                                 is_apex_available)
 from transformers.training_args import OptimizerNames
 from accelerate.utils import DistributedType
-if is_apex_available():
-    from apex import amp
-
+from hydra import initialize
+from hydra.core.global_hydra import GlobalHydra
+from collections import OrderedDict
 
 THRESHOLD = 1.5
 
@@ -32,6 +31,7 @@ def dice_loss(
         eps: float=1e-6,
 ):
     """
+    B C W H
     Compute the DICE loss, similar to generalized IOU for masks
     Args:
         inputs: A float tensor of arbitrary shape.
@@ -41,8 +41,8 @@ def dice_loss(
                 (0 for the negative class and 1 for the positive class).
     """
     inputs = inputs.sigmoid()
-    inputs = inputs.flatten(1, 2)
-    targets = targets.flatten(1, 2)
+    inputs = inputs.flatten(2, 3)
+    targets = targets.flatten(2, 3)
     numerator = 2 * (inputs / scale * targets).sum(-1)
     denominator = (inputs / scale).sum(-1) + (targets / scale).sum(-1)
     loss = 1 - (numerator + eps) / (denominator + eps)
@@ -67,7 +67,7 @@ def sigmoid_ce_loss(
         Loss tensor
     """
     loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
-    loss = loss.flatten(1, 2).mean(1).sum() / (num_masks + 1e-8)
+    loss = loss.flatten(2, 3).mean(2).sum() / (num_masks + 1e-8)
     return loss
 
 
@@ -89,43 +89,66 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 
     def __init__(self, config):
         # TODO: Load SAM model
-        self.seg_token_idx = -1
         super().__init__(config)
 
         self.ce_loss_weight = 1.0
         self.dice_loss_weight = 0.5
         self.bce_loss_weight = 2.0
 
+        self.enable_segmentation = False
+
+        self.seg_token_idx = -1
         self.sam = None
         self.text_hidden_fcs = None
 
-        self.enable_segmentation = False
-
     def init_sam_module(self, model_path):
-        # TODO: Apply lora only on LLM
-        # SAM Initialization
-        self.sam = build_sam_vit_h(model_path)
-        self.sam.to(self.device).to(self.dtype)
-        # TODO: Load from checkpoint
-        for param in self.sam.parameters():
-            param.requires_grad = False
-        for param in self.sam.mask_decoder.parameters():
-            param.requires_grad = True
-        # Projection layer (from <seg> hidden states to sam)
-        in_dim = 2048
-        out_dim = 256
-        text_fc = [
-            nn.Linear(in_dim, in_dim),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_dim, out_dim),
-            nn.Dropout(0.0),
-        ]
-        self.text_hidden_fcs = nn.ModuleList([nn.Sequential(*text_fc)])
-        self.text_hidden_fcs.to(self.device).to(self.dtype)
+        # SAM2 Initialization
+        model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
+        GlobalHydra.instance().clear()
+        with initialize(version_base=None, config_path="sam2"):
+            self.sam = build_sam2_video_predictor(model_cfg, model_path, text_embed_dim=2048, device=self.device)
+
+    @torch.inference_mode()
+    def init_sam_state(self, images, hw):
+        """Initialize an inference state."""
+        compute_device = self.device  # device of the model
+        inference_state = {}
+        inference_state["images"] = images
+        inference_state["num_frames"] = len(images)
+        # the original video height and width, used for resizing final output scores
+        inference_state["video_height"] = hw[0]
+        inference_state["video_width"] = hw[1]
+        inference_state["device"] = compute_device
+        inference_state["storage_device"] = compute_device
+        # inputs on each frame
+        inference_state["point_inputs_per_obj"] = {}
+        inference_state["mask_inputs_per_obj"] = {}
+        inference_state["text_inputs_per_obj"] = {}
+        # visual features on a small number of recently visited frames for quick interactions
+        inference_state["cached_features"] = {}
+        # values that don't change across frames (so we only need to hold one copy of them)
+        inference_state["constants"] = {}
+        # mapping between client-side object id and model-side object index
+        inference_state["obj_id_to_idx"] = OrderedDict()
+        inference_state["obj_idx_to_id"] = OrderedDict()
+        inference_state["obj_ids"] = []
+        # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
+        inference_state["output_dict_per_obj"] = {}
+        # A temporary storage to hold new outputs when user interact with a frame
+        # to add clicks or mask (it's merged into "output_dict" before propagation starts)
+        inference_state["temp_output_dict_per_obj"] = {}
+        # Frames that already holds consolidated outputs from click or mask inputs
+        # (we directly use their consolidated outputs during tracking)
+        # metadata for each tracking frame (e.g. which direction it's tracked)
+        inference_state["frames_tracked_per_obj"] = {}
+        # Warm up the visual backbone and cache the image feature on frame 0
+        self.sam._get_image_feature(inference_state, frame_idx=0, batch_size=1)
+        return inference_state
+
 
     def forward(
             self,
-            original_images: Optional[torch.Tensor] = None,
+            images: Optional[torch.Tensor] = None,
             gt_masks: Optional[torch.Tensor] = None,
             input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.Tensor] = None,
@@ -146,6 +169,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             second_per_grid_ts: Optional[torch.Tensor] = None,
     ) -> tuple | Qwen2_5_VLCausalLMOutputWithPast | VideoLISACausalLMOutputWithPast:
 
+        #
         if not self.enable_segmentation:
             return super().forward(input_ids=input_ids,
                                  attention_mask=attention_mask,
@@ -188,7 +212,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             return outputs
 
         output_hidden_states = outputs.hidden_states
-        last_hidden_state = self.text_hidden_fcs[0](output_hidden_states[-1])
+        last_hidden_state = output_hidden_states[-1]
         seg_token_mask = input_ids == self.seg_token_idx
         pred_embeddings = last_hidden_state[seg_token_mask]
         seg_token_counts = seg_token_mask.int().sum(-1)  # [bs, ]
@@ -205,57 +229,20 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         assert pred_embeddings is not None, "Cannot find <seg> token."
 
         # TODO: image input
-        transform = ResizeLongestSide(self.sam.image_encoder.img_size)
-        assert len(pred_embeddings) == len(original_images), "Prediction size mismatch image number"
-        features, input_sizes, original_sizes = [], [], []
-        for idx, image in enumerate(original_images):
-            image_np = image
-            input_image = transform.apply_image(image_np)
-            input_image_torch = torch.as_tensor(input_image, device=self.device)
-            input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[None, :, :, :]
-
-            transformed_image = input_image_torch
-            original_image_size = image_np.shape[:2]
-            assert (
-                    len(transformed_image.shape) == 4
-                    and transformed_image.shape[1] == 3
-                    and max(*transformed_image.shape[2:]) == self.sam.image_encoder.img_size
-            ), f"set_torch_image input must be BCHW with long side {self.sam.image_encoder.img_size}."
-
-            original_size = original_image_size
-            input_size = tuple(transformed_image.shape[-2:])
-            input_image = self.sam.preprocess(transformed_image)
-            feature = self.sam.image_encoder(input_image)
-
-            features.append(feature)
-            input_sizes.append(input_size)
-            original_sizes.append(original_size)
-
-        # TODO: sam process, parallel
+        assert len(pred_embeddings) == len(images), "Prediction size mismatch image number"
         pred_masks = []
-        for i in range(len(pred_embeddings)):
-            (sparse_embeddings, dense_embeddings
-             ) = self.sam.prompt_encoder(
-                points=None,
-                boxes=None,
-                masks=None,
-                text_embeds=pred_embeddings[i].unsqueeze(1),
+        for idx, image in enumerate(images):
+            inference_state = self.init_sam_state(images=[image],
+                                                  hw=gt_masks[idx].shape[-2:],
+                                                  )
+            self.sam.reset_state(inference_state)
+            _, out_obj_ids, out_mask_logits = self.sam.add_text_embeddings(
+                inference_state=inference_state,
+                texts=pred_embeddings[idx],
+                frame_idx=0,
+                obj_id=0,
             )
-
-            sparse_embeddings = sparse_embeddings.to(self.dtype)
-            low_res_masks, iou_predictions = self.sam.mask_decoder(
-                image_embeddings=features[i],
-                image_pe=self.sam.prompt_encoder.get_dense_pe(),
-                sparse_prompt_embeddings=sparse_embeddings,
-                dense_prompt_embeddings=dense_embeddings,
-                multimask_output=False,
-            )
-            pred_mask = self.sam.postprocess_masks(
-                low_res_masks,
-                input_size=input_sizes[i],
-                original_size=original_sizes[i],
-            )
-            pred_masks.append(pred_mask[:, 0])
+            pred_masks.append(out_mask_logits)
 
         # loss, ce_loss, mask_bce_loss, mask_dice_loss = None, None, None, None
         ce_loss = outputs.loss
@@ -302,7 +289,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
             # pred_masks=pred_masks
         )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def generate(self, original_images, *args, **kwargs):
         outputs = super().generate(output_hidden_states=True,
                                    return_dict_in_generate=True,
@@ -403,6 +390,7 @@ class LISATrainer(Trainer):
             `torch.Tensor`: The tensor with training loss on this batch.
         """
         model.train()
+        model.base_model.sam.training = False
         if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
             self.optimizer.train()
 
@@ -442,9 +430,6 @@ class LISATrainer(Trainer):
 
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
-        if self.use_apex:
-            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                scaled_loss.backward()
         else:
             # Finally we need to normalize the loss for reporting
             if not self.model_accepts_loss_kwargs and self.compute_loss_func is None:

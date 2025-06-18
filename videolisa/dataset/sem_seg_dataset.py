@@ -4,6 +4,7 @@ import random
 import numpy as np
 import torch
 from PIL import Image
+from typing import Optional
 
 from qwen_vl_utils import process_vision_info
 
@@ -55,14 +56,17 @@ class SemSegDataset(torch.utils.data.Dataset):
         processor,
         tokenizer,
         precision: str = "fp32",
-        sem_seg_data="ade20k",
+        # sem_seg: <class> -> <mask>
+        sem_seg_data: Optional[str]="ade20k",
     ):
 
         self.processor = processor
         self.tokenizer = tokenizer
         self.precision = precision
 
+        # Only for sem_seg_data
         self.short_question_list = SHORT_QUESTION_LIST
+
         self.answer_list = ANSWER_LIST
 
         self.data2list = {}

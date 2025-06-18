@@ -139,6 +139,8 @@ class VideoDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.precision = precision
         self.split = split
+        if max_frames <= 0:
+            raise ValueError("max_frames should be > 0, now is {}".format(max_frames))
         self.max_frames = max_frames
         self.enable_cvt = enable_cvt
 

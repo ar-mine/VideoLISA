@@ -3,6 +3,7 @@ import torch
 from qwen_vl_utils import process_vision_info
 import numpy as np
 import cv2
+from typing import Optional
 
 SHORT_QUESTION_LIST = [
     "Can you segment the object in this image?",
@@ -38,16 +39,17 @@ class ModelArguments:
 
 @dataclass
 class ScriptArguments:
-    max_frames: int = field(
-        metadata={'help': 'Max number of frames to process'},
-    )
     data_root: str = field()
     datasets: str = field()
-    sam_model_path: str = field()
-    train_dataset_path: str = field()
-    val_dataset_type: str = field()
-    val_dataset_path: str = field()
-    resume: bool = field()
+    sam_model_path: Optional[str] = field(default=None)
+    train_dataset_path: str = field(default="")
+    val_dataset_type: str = field(default="")
+    val_dataset_path: str = field(default="")
+    resume: bool = field(default=False)
+    max_frames: int = field(
+        metadata={'help': 'Max number of frames to process'},
+        default=0
+    )
 
 def find_linear_layers(model, lora_target_modules, excluded_prefix):
     cls = torch.nn.Linear
@@ -96,7 +98,6 @@ def predict(messages, model, processor):
         highlighted_image = None
     return output_text[0], highlighted_image, fps
 
-
 def calculate_iou(start_A, end_A, start_B, end_B):
     """
     Calculate the Intersection over Union (IoU) for two time intervals.
@@ -127,3 +128,6 @@ def calculate_iou(start_A, end_A, start_B, end_B):
         return 0.0  # If both intervals have zero length, IoU is 0
     else:
         return intersection / union
+
+def init_segmentation(model, tokenizer, processor, config):
+    pass

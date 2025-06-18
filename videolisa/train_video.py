@@ -44,7 +44,7 @@ def main(training_args, model_args, script_args):
     if script_args.resume:
         model_params = torch.load(os.path.join(training_args.output_dir, "video.pt"))
         model.load_state_dict(model_params)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)\
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
     # TODO: Enable fast processor
     processor = AutoProcessor.from_pretrained(model_path)
     model.enable_input_require_grads()  # executed when the gradient checkpoint is turned on

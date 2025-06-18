@@ -44,6 +44,7 @@ def main(training_args, model_args, script_args):
             attn_implementation="flash_attention_2",
             device_map="auto",
         )
+    torch.set_default_dtype(torch.bfloat16)
     model.enable_segmentation = True
     model.init_sam_module(model_path=script_args.sam_model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
@@ -84,7 +85,7 @@ def main(training_args, model_args, script_args):
     )
     peft_model = get_peft_model(model, config)
     peft_model.base_model.lm_head.weight.requires_grad = True
-    peft_model.base_model.model.language_model.embed_tokens.weight.requires_grad = True
+    peft_model.base_model.model.model.language_model.embed_tokens.weight.requires_grad = True
     for param in peft_model.base_model.model.sam.sam_prompt_encoder.project_text.parameters():
         param.requires_grad = True
     # for param in peft_model.base_model.model.sam.sam_mask_decoder.parameters():

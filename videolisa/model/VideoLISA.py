@@ -68,6 +68,8 @@ def sigmoid_ce_loss(
     """
     loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
     loss = loss.flatten(2, 3).mean(2).sum() / (num_masks + 1e-8)
+    # if loss > 50:
+    #     print("Abnormal loss: {}".format(loss))
     return loss
 
 
@@ -108,7 +110,6 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         with initialize(version_base=None, config_path="sam2"):
             self.sam = build_sam2_video_predictor(model_cfg, model_path, text_embed_dim=2048, device=self.device)
 
-    @torch.inference_mode()
     def init_sam_state(self, images, hw):
         """Initialize an inference state."""
         compute_device = self.device  # device of the model
@@ -231,6 +232,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         # TODO: image input
         assert len(pred_embeddings) == len(images), "Prediction size mismatch image number"
         pred_masks = []
+        images = [image.to(pred_embeddings[0].dtype) for image in images]
         for idx, image in enumerate(images):
             inference_state = self.init_sam_state(images=[image],
                                                   hw=gt_masks[idx].shape[-2:],
@@ -390,7 +392,7 @@ class LISATrainer(Trainer):
             `torch.Tensor`: The tensor with training loss on this batch.
         """
         model.train()
-        model.base_model.sam.training = False
+        model.base_model.sam.eval()
         if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
             self.optimizer.train()
 
@@ -441,5 +443,6 @@ class LISATrainer(Trainer):
                 kwargs["scale_wrt_gas"] = False
 
             self.accelerator.backward(loss, **kwargs)
+            # self.accelerator.clip_grad_norm_(model.parameters(), max_norm=5.0)
 
             return loss.detach()

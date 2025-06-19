@@ -70,8 +70,6 @@ def sigmoid_ce_loss(
     """
     loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
     loss = loss.flatten(2, 3).mean(2).sum() / (num_masks + 1e-8)
-    # if loss > 50:
-    #     print("Abnormal loss: {}".format(loss))
     return loss
 
 
@@ -297,8 +295,6 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
                     * gt_mask.shape[0]
             )
             num_masks += gt_mask.shape[0]
-            # if mask_bce_loss > 20:
-            #     print("mask_bce_loss: {}".format(mask_bce_loss))
         mask_bce_loss = self.bce_loss_weight * mask_bce_loss / (num_masks + 1e-8)
         mask_dice_loss = self.dice_loss_weight * mask_dice_loss / (num_masks + 1e-8)
         mask_loss = mask_bce_loss + mask_dice_loss
@@ -362,6 +358,10 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 class LISATrainer(Trainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.model.sam.fill_hole_area = 0
+        self.model.sam.multimask_output = False
+        self.model.sam.multimask_output_for_tracking = False
+        self.model.sam.multimask_output_in_sam = False
 
     def training_step(
             self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None
@@ -384,9 +384,11 @@ class LISATrainer(Trainer):
             `torch.Tensor`: The tensor with training loss on this batch.
         """
         # Config model to be training mode
-        model.train()
-        model.base_model.sam.eval()
+        self.model.train()
+        # self.model.base_model.sam.eval()
+        model.base_model.sam.sam_prompt_encoder.project_text.train()
         self.model.sam.pred_obj_scores = False
+
 
         if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
             self.optimizer.train()
@@ -400,6 +402,11 @@ class LISATrainer(Trainer):
                              "mask_bce_loss": outputs["mask_bce_loss"].item(),
                              "mask_dice_loss": outputs["mask_dice_loss"].item()}
             self.log(extra_metrics)
+            # with torch.no_grad():
+            # #     for name, param in self.model.base_model.sam.sam_prompt_encoder.project_text.named_parameters():
+            # #         print(f"{name}: {param.grad}")
+            #     print(self.model.base_model.sam.sam_prompt_encoder.project_text.layers[0].weight.detach().sum())
+            #     print(self.model.base_model.model.lm_head.weight.detach().sum())
 
         del inputs
         if (
@@ -436,8 +443,11 @@ class LISATrainer(Trainer):
             # https://github.com/huggingface/transformers/pull/35808
             if self.accelerator.distributed_type == DistributedType.DEEPSPEED:
                 kwargs["scale_wrt_gas"] = False
-
             self.accelerator.backward(loss, **kwargs)
             # self.accelerator.clip_grad_norm_(model.parameters(), max_norm=5.0)
-
+            # from torchviz import make_dot
+            # self.accelerator.backward(loss, retain_graph=True, **kwargs)
+            #
+            # dot = make_dot(loss, params=dict(self.model.base_model.sam.sam_prompt_encoder.project_text.named_parameters()))
+            # dot.render("computation_graph-large", format="png")  # 保存为 PNG 文件
             return loss.detach()

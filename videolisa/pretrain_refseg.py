@@ -10,7 +10,7 @@ from dataset.refer_seg_dataset import ReferSegDataset
 from dataset.dataset import DataCollatorForQwen
 from trl import TrlParser
 from peft import LoraConfig, TaskType, get_peft_model
-from utils import ModelArguments, ScriptArguments, find_linear_layers, predict
+from utils import ModelArguments, ScriptArguments, find_linear_layers
 import wandb
 
 global rank

@@ -177,7 +177,6 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         self.sam._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state
 
-
     def forward(
             self,
             images: Optional[torch.Tensor] = None,
@@ -384,8 +383,11 @@ class LISATrainer(Trainer):
         Return:
             `torch.Tensor`: The tensor with training loss on this batch.
         """
+        # Config model to be training mode
         model.train()
         model.base_model.sam.eval()
+        self.model.sam.pred_obj_scores = False
+
         if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
             self.optimizer.train()
 

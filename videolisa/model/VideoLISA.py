@@ -20,6 +20,8 @@ from accelerate.utils import DistributedType
 from hydra import initialize
 from hydra.core.global_hydra import GlobalHydra
 from collections import OrderedDict
+from torchvision.transforms import transforms
+from PIL import Image
 
 THRESHOLD = 1.5
 
@@ -73,6 +75,34 @@ def sigmoid_ce_loss(
     return loss
 
 
+def load_images(
+        images,
+        image_size,
+        offload_video_to_cpu=False,
+        img_mean=(0.485, 0.456, 0.406),
+        img_std=(0.229, 0.224, 0.225),
+        compute_device=torch.device("cuda"),
+):
+    img_mean = torch.tensor(img_mean)[:, None, None]
+    img_std = torch.tensor(img_std)[:, None, None]
+    preprocess = transforms.Compose([
+        transforms.Resize((image_size, image_size)),  # 调整到指定尺寸
+        transforms.ToTensor(),
+    ])
+    video_height, video_width = images[0].shape[:2]
+    images = [preprocess(Image.fromarray(image, mode='RGB')) for image in images]
+
+    images = torch.stack(images, dim=0)
+    if not offload_video_to_cpu:
+        images = images.to(compute_device)
+        img_mean = img_mean.to(compute_device)
+        img_std = img_std.to(compute_device)
+    # normalize by mean and std
+    images -= img_mean
+    images /= img_std
+    return images, video_height, video_width
+
+
 @dataclass
 class VideoLISACausalLMOutputWithPast(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -110,15 +140,16 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         with initialize(version_base=None, config_path="sam2"):
             self.sam = build_sam2_video_predictor(model_cfg, model_path, text_embed_dim=2048, device=self.device)
 
-    def init_sam_state(self, images, hw):
+    def init_sam_state(self, images):
         """Initialize an inference state."""
         compute_device = self.device  # device of the model
         inference_state = {}
+        images, video_height, video_width = load_images(images, image_size=1024)
         inference_state["images"] = images
         inference_state["num_frames"] = len(images)
         # the original video height and width, used for resizing final output scores
-        inference_state["video_height"] = hw[0]
-        inference_state["video_width"] = hw[1]
+        inference_state["video_height"] = video_height
+        inference_state["video_width"] = video_width
         inference_state["device"] = compute_device
         inference_state["storage_device"] = compute_device
         # inputs on each frame
@@ -232,11 +263,8 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         # TODO: image input
         assert len(pred_embeddings) == len(images), "Prediction size mismatch image number"
         pred_masks = []
-        images = [image.to(pred_embeddings[0].dtype) for image in images]
         for idx, image in enumerate(images):
-            inference_state = self.init_sam_state(images=[image],
-                                                  hw=gt_masks[idx].shape[-2:],
-                                                  )
+            inference_state = self.init_sam_state(images=[image])
             self.sam.reset_state(inference_state)
             _, out_obj_ids, out_mask_logits = self.sam.add_text_embeddings(
                 inference_state=inference_state,

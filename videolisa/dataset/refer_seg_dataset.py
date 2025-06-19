@@ -6,8 +6,6 @@ import numpy as np
 import torch
 from pycocotools import mask
 
-from videolisa.model.sam2.utils.transforms import SAM2Transforms
-
 from .grefer import G_REFER
 from .refer import REFER
 from .meta import *
@@ -19,6 +17,7 @@ class ReferSegDataset(torch.utils.data.Dataset):
     img_size = 1024
     ignore_label = 255
 
+    @torch.no_grad()
     def __init__(
         self,
         base_image_dir,
@@ -35,12 +34,6 @@ class ReferSegDataset(torch.utils.data.Dataset):
         self.base_image_dir = base_image_dir["coco"]
         self.image_size = image_size
         self.precision = precision
-        self.transform = SAM2Transforms(
-            resolution=image_size,
-            mask_threshold=0.0,
-            max_hole_area=0.0,
-            max_sprinkle_area=0.0,
-        )
 
         self.short_question_list = SHORT_QUESTION_LIST
         self.answer_list = ANSWER_LIST
@@ -143,7 +136,6 @@ class ReferSegDataset(torch.utils.data.Dataset):
 
         image = Image.open(image_path)
         image = np.array(image.convert("RGB"))
-        image = self.transform(image)
 
         questions = []
         answers = []

@@ -298,7 +298,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
                     * gt_mask.shape[0]
             )
             num_masks += gt_mask.shape[0]
-            # if mask_bce_loss < THRESHOLD:
+            # if mask_bce_loss > 20:
             #     print("mask_bce_loss: {}".format(mask_bce_loss))
         mask_bce_loss = self.bce_loss_weight * mask_bce_loss / (num_masks + 1e-8)
         mask_dice_loss = self.dice_loss_weight * mask_dice_loss / (num_masks + 1e-8)
@@ -320,7 +320,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         )
 
     @torch.inference_mode()
-    def generate(self, original_images, *args, **kwargs):
+    def generate(self, images, *args, **kwargs):
         outputs = super().generate(output_hidden_states=True,
                                    return_dict_in_generate=True,
                                    num_beams=1,
@@ -341,55 +341,20 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 
         if len(seg_token_hidden_states) > 0:
             seg_token_hidden_states = torch.cat(seg_token_hidden_states, dim=0)
-            pred_embeddings = self.text_hidden_fcs[0](seg_token_hidden_states)
+            pred_embeddings = seg_token_hidden_states
 
-            # TODO: image input
-            bs = pred_embeddings.shape[0]
-            transform = ResizeLongestSide(self.sam.image_encoder.img_size)
-            assert bs == len(original_images), "Prediction size mismatch image number"
+            assert pred_embeddings.shape[0] == len(images), "Prediction size mismatch image number"
             pred_masks = []
-            for idx, image in enumerate(original_images):
-                image_np = np.array(image)
-                input_image = transform.apply_image(image_np)
-                input_image_torch = torch.as_tensor(input_image, device=self.device)
-                input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[None, :, :, :]
-
-                transformed_image = input_image_torch
-                original_image_size = image_np.shape[:2]
-                assert (
-                        len(transformed_image.shape) == 4
-                        and transformed_image.shape[1] == 3
-                        and max(*transformed_image.shape[2:]) == self.sam.image_encoder.img_size
-                ), f"set_torch_image input must be BCHW with long side {self.sam.image_encoder.img_size}."
-
-                original_size = original_image_size
-                input_size = tuple(transformed_image.shape[-2:])
-                input_image = self.sam.preprocess(transformed_image)
-                feature = self.sam.image_encoder(input_image)
-
-                # TODO: sam process
-                (sparse_embeddings, dense_embeddings
-                ) = self.sam.prompt_encoder(
-                    points=None,
-                    boxes=None,
-                    masks=None,
-                    text_embeds=pred_embeddings[idx].unsqueeze(1),
+            for idx, image in enumerate(images):
+                inference_state = self.init_sam_state(images=[image])
+                self.sam.reset_state(inference_state)
+                _, out_obj_ids, out_mask_logits = self.sam.add_text_embeddings(
+                    inference_state=inference_state,
+                    texts=pred_embeddings[idx],
+                    frame_idx=0,
+                    obj_id=0,
                 )
-
-                sparse_embeddings = sparse_embeddings.to(self.dtype)
-                low_res_masks, iou_predictions = self.sam.mask_decoder(
-                    image_embeddings=feature,
-                    image_pe=self.sam.prompt_encoder.get_dense_pe(),
-                    sparse_prompt_embeddings=sparse_embeddings,
-                    dense_prompt_embeddings=dense_embeddings,
-                    multimask_output=False,
-                )
-                pred_mask = self.sam.postprocess_masks(
-                    low_res_masks,
-                    input_size=input_size,
-                    original_size=original_size,
-                )
-                pred_masks.append(pred_mask[:, 0])
+                pred_masks.append(out_mask_logits)
         else:
             pred_masks = []
         return output_ids, pred_masks

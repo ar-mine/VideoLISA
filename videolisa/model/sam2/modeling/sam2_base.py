@@ -16,8 +16,8 @@ from videolisa.model.sam2.modeling.sam.transformer import TwoWayTransformer
 from videolisa.model.sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_frames
 
 # a large negative value as a placeholder score for missing objects
-NO_OBJ_SCORE = -1024.0
-
+# NO_OBJ_SCORE = -1024.0
+NO_OBJ_SCORE = -20.0
 
 class SAM2Base(torch.nn.Module):
     def __init__(
@@ -745,7 +745,7 @@ class SAM2Base(torch.nn.Module):
         track_in_reverse,
         prev_sam_mask_logits,
     ):
-        current_out = {"point_inputs": point_inputs, "mask_inputs": mask_inputs}
+        current_out = {"point_inputs": point_inputs, "mask_inputs": mask_inputs, "text_inputs": text_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
         if len(current_vision_feats) > 1:
             high_res_features = [

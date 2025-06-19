@@ -314,7 +314,7 @@ class SAM2VideoPredictor(SAM2Base):
             raise ValueError("texts must be provided")
 
         if not isinstance(texts, torch.Tensor):
-            texts = torch.tensor(texts, dtype=torch.float32)
+            texts = torch.tensor(texts)
         # TODO: generalize to multi text_embeddings combined with labels input
         # if labels is None:
         #     labels = torch.zeros(0, dtype=torch.int32)

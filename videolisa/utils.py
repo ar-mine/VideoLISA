@@ -4,6 +4,7 @@ from qwen_vl_utils import process_vision_info
 import numpy as np
 import cv2
 from typing import Optional
+from PIL import Image
 
 SHORT_QUESTION_LIST = [
     "Can you segment the object in this image?",
@@ -78,7 +79,10 @@ def predict(messages, model, processor):
     inputs = inputs.to("cuda")
 
     # 生成输出
-    generated_ids, pred_masks = model.generate(original_images=image_inputs, **inputs, max_new_tokens=128)
+    image_path = messages[0]['content'][0]['image']
+    image = Image.open(image_path)
+    image = np.array(image.convert("RGB"))
+    generated_ids, pred_masks = model.generate(images=[image], **inputs, max_new_tokens=128)
     generated_ids_trimmed = [
         out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
@@ -86,14 +90,13 @@ def predict(messages, model, processor):
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )
     if len(pred_masks) > 0:
-        image_np = np.array(image_inputs[0])
         # TODO: Change bool method
         pred_mask = pred_masks[0][0] > 0
-        pred_mask = pred_mask.cpu().numpy()
-        highlight = np.zeros_like(image_np, dtype=np.uint8)
+        pred_mask = pred_mask.cpu().numpy()[0]
+        highlight = np.zeros_like(image, dtype=np.uint8)
         highlight[pred_mask] = (255, 0, 0)
         # 将高亮遮罩与原图叠加
-        highlighted_image = cv2.addWeighted(image_np, 0.5, highlight, 0.5, 0)
+        highlighted_image = cv2.addWeighted(image, 0.5, highlight, 0.5, 0)
     else:
         highlighted_image = None
     return output_text[0], highlighted_image, fps

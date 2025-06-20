@@ -1,10 +1,7 @@
 import torch
 import torch.distributed as dist
 import os
-from transformers import AutoProcessor, AutoTokenizer, AutoConfig
-from transformers import (
-    TrainingArguments,
-)
+from transformers import AutoProcessor, AutoTokenizer, AutoConfig, TrainingArguments
 from model.VideoLISA import VideoLISA, LISATrainer
 from dataset.refer_seg_dataset import ReferSegDataset
 from dataset.dataset import DataCollatorForQwen

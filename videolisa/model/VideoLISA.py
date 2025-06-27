@@ -387,6 +387,7 @@ class LISATrainer(Trainer):
         self.model.train()
         # self.model.base_model.sam.eval()
         model.base_model.sam.sam_prompt_encoder.project_text.train()
+        model.base_model.sam.sam_mask_decoder.train()
         self.model.sam.pred_obj_scores = False
 
 

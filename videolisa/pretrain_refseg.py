@@ -85,9 +85,8 @@ def main(training_args, model_args, script_args):
     peft_model.base_model.model.model.language_model.embed_tokens.weight.requires_grad = True
     for param in peft_model.base_model.model.sam.sam_prompt_encoder.project_text.parameters():
         param.requires_grad = True
-    # for param in peft_model.base_model.model.sam.sam_mask_decoder.parameters():
-    #     param.requires_grad = True
-
+    for param in peft_model.base_model.model.sam.sam_mask_decoder.parameters():
+        param.requires_grad = True
     if rank == 0:
         peft_model.print_trainable_parameters()
 

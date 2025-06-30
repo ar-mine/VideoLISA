@@ -22,8 +22,39 @@ from hydra.core.global_hydra import GlobalHydra
 from collections import OrderedDict
 from torchvision.transforms import transforms
 from PIL import Image
+import matplotlib.pyplot as plt
+import os
+
 
 THRESHOLD = 1.5
+
+@torch.no_grad()
+def debug_mask(prediction_mask, groundtruth_mask, original_img):
+    original_img = original_img / 255.0
+    # Convert masks to numpy and squeeze to (H, W)
+    pred_mask_np = torch.sigmoid(prediction_mask).squeeze().numpy()  # Apply sigmoid to logits, shape: (H, W)
+    gt_mask_np = groundtruth_mask.squeeze().numpy()   # Shape: (H, W)
+
+    # Create RGB versions of masks for overlay
+    pred_mask_rgb = np.stack([pred_mask_np, pred_mask_np, pred_mask_np], axis=-1)  # Shape: (H, W, 3)
+    gt_mask_rgb = np.stack([gt_mask_np, gt_mask_np, gt_mask_np], axis=-1)         # Shape: (H, W, 3)
+
+    # Overlay masks on original image (e.g., red color for pred, blue for gt)
+    alpha = 0.5  # Transparency factor
+    masked_pred = original_img * (1 - alpha * pred_mask_rgb) + np.array([1, 0, 0]) * alpha * pred_mask_rgb
+    masked_gt = original_img * (1 - alpha * gt_mask_rgb) + np.array([0, 0, 1]) * alpha * gt_mask_rgb
+
+    # Clip values to [0, 1]
+    masked_pred = np.clip(masked_pred, 0, 1)
+    masked_gt = np.clip(masked_gt, 0, 1)
+
+    output_dir = "output"
+    # Save original image
+    plt.imsave(os.path.join(output_dir, "original_image.png"), original_img)
+
+    # Save masked images
+    plt.imsave(os.path.join(output_dir, "prediction_mask.png"), masked_pred)
+    plt.imsave(os.path.join(output_dir, "groundtruth_mask.png"), masked_gt)
 
 def dice_loss(
         inputs: torch.Tensor,
@@ -129,7 +160,8 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 
         self.seg_token_idx = -1
         self.sam = None
-        self.text_hidden_fcs = None
+
+        self.training = False
 
     def init_sam_module(self, model_path):
         # SAM2 Initialization
@@ -294,6 +326,8 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
                     dice_loss(pred_mask, gt_mask, num_masks=gt_mask.shape[0])
                     * gt_mask.shape[0]
             )
+            if mask_dice_loss < 0.3:
+                print("mask dice loss: {}".format(mask_dice_loss))
             num_masks += gt_mask.shape[0]
         mask_bce_loss = self.bce_loss_weight * mask_bce_loss / (num_masks + 1e-8)
         mask_dice_loss = self.dice_loss_weight * mask_dice_loss / (num_masks + 1e-8)
@@ -363,6 +397,10 @@ class LISATrainer(Trainer):
         self.model.sam.multimask_output_for_tracking = False
         self.model.sam.multimask_output_in_sam = False
 
+        self.ce_loss = 0
+        self.mask_bce_loss = 0
+        self.mask_dice_loss = 0
+
     def training_step(
             self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None
     ) -> torch.Tensor:
@@ -398,11 +436,16 @@ class LISATrainer(Trainer):
 
         with self.compute_loss_context_manager():
             loss, outputs = self.compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
-        if self.state.global_step % self.args.logging_steps == 0 and "ce_loss" in outputs.keys():
-            extra_metrics = {"ce_loss": outputs["ce_loss"].item(),
-                             "mask_bce_loss": outputs["mask_bce_loss"].item(),
-                             "mask_dice_loss": outputs["mask_dice_loss"].item()}
-            self.log(extra_metrics)
+        if "ce_loss" in outputs.keys():
+            self.ce_loss += outputs["ce_loss"].item()
+            self.mask_bce_loss += outputs["mask_bce_loss"].item()
+            self.mask_dice_loss += outputs["mask_dice_loss"].item()
+            if self.state.global_step % self.args.logging_steps == 0:
+                extra_metrics = {"ce_loss": self.ce_loss/self.args.logging_steps,
+                                 "mask_bce_loss": self.mask_bce_loss/self.args.logging_steps,
+                                 "mask_dice_loss": self.mask_dice_loss/self.args.logging_steps}
+                self.ce_loss, self.mask_bce_loss, self.mask_dice_loss = 0, 0, 0
+                self.log(extra_metrics)
             # with torch.no_grad():
             # #     for name, param in self.model.base_model.sam.sam_prompt_encoder.project_text.named_parameters():
             # #         print(f"{name}: {param.grad}")

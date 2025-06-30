@@ -326,8 +326,8 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
                     dice_loss(pred_mask, gt_mask, num_masks=gt_mask.shape[0])
                     * gt_mask.shape[0]
             )
-            if mask_dice_loss < 0.3:
-                print("mask dice loss: {}".format(mask_dice_loss))
+            # if mask_dice_loss < 0.3:
+            #     print("mask dice loss: {}".format(mask_dice_loss))
             num_masks += gt_mask.shape[0]
         mask_bce_loss = self.bce_loss_weight * mask_bce_loss / (num_masks + 1e-8)
         mask_dice_loss = self.dice_loss_weight * mask_dice_loss / (num_masks + 1e-8)

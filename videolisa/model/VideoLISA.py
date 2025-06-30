@@ -400,6 +400,8 @@ class LISATrainer(Trainer):
         self.ce_loss = 0
         self.mask_bce_loss = 0
         self.mask_dice_loss = 0
+        self.logging_step = self.args.gradient_accumulation_steps*self.args.logging_steps
+        self.steps = 0
 
     def training_step(
             self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None
@@ -440,12 +442,13 @@ class LISATrainer(Trainer):
             self.ce_loss += outputs["ce_loss"].item()
             self.mask_bce_loss += outputs["mask_bce_loss"].item()
             self.mask_dice_loss += outputs["mask_dice_loss"].item()
-            if self.state.global_step % self.args.logging_steps == 0:
-                extra_metrics = {"ce_loss": self.ce_loss/self.args.logging_steps,
-                                 "mask_bce_loss": self.mask_bce_loss/self.args.logging_steps,
-                                 "mask_dice_loss": self.mask_dice_loss/self.args.logging_steps}
+            if self.steps % self.logging_step == 0 and self.steps > 0:
+                extra_metrics = {"ce_loss": self.ce_loss/self.logging_step,
+                                 "mask_bce_loss": self.mask_bce_loss/self.logging_step,
+                                 "mask_dice_loss": self.mask_dice_loss/self.logging_step}
                 self.ce_loss, self.mask_bce_loss, self.mask_dice_loss = 0, 0, 0
                 self.log(extra_metrics)
+            self.steps += 1
             # with torch.no_grad():
             # #     for name, param in self.model.base_model.sam.sam_prompt_encoder.project_text.named_parameters():
             # #         print(f"{name}: {param.grad}")

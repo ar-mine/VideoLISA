@@ -67,7 +67,8 @@ def find_linear_layers(model, lora_target_modules, excluded_prefix):
 
 def predict(messages, model, processor):
     # 准备推理
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    text = processor.apply_chat_template([messages[0]], tokenize=False, add_generation_prompt=False)
+    text += "<|im_start|>assistant\n"
     image_inputs, video_inputs, fps = process_vision_info(messages, return_video_kwargs=True)
     inputs = processor(
         text=[text],
@@ -99,7 +100,7 @@ def predict(messages, model, processor):
         highlighted_image = cv2.addWeighted(image, 0.5, highlight, 0.5, 0)
     else:
         highlighted_image = None
-    return output_text[0], highlighted_image, fps
+    return output_text[0], highlighted_image, fps, pred_masks
 
 def calculate_iou(start_A, end_A, start_B, end_B):
     """

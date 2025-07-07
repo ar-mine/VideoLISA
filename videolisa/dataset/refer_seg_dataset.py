@@ -110,7 +110,7 @@ class ReferSegDataset(torch.utils.data.Dataset):
         annotations = refer_seg_ds["annotations"]
         img2refs = refer_seg_ds["img2refs"]
         # idx = 4
-        # idx = random.randint(0, len(images) - 1)
+        idx = random.randint(0, len(images) - 1)
         image_info = images[idx]
         image_path = image_info["file_name"]
         image_id = image_info["id"]

@@ -93,6 +93,7 @@ class ReferSegDataset(torch.utils.data.Dataset):
             self.refer_seg_data[ds] = refer_seg_ds
 
     def __len__(self):
+        # return 5000
         if self.length == 0:
             for ds in self.refer_seg_ds_list:
                 self.length += len(self.refer_seg_data[ds]['images'])
@@ -108,7 +109,8 @@ class ReferSegDataset(torch.utils.data.Dataset):
         images = refer_seg_ds["images"]
         annotations = refer_seg_ds["annotations"]
         img2refs = refer_seg_ds["img2refs"]
-        idx = random.randint(0, len(images) - 1)
+        # idx = 4
+        # idx = random.randint(0, len(images) - 1)
         image_info = images[idx]
         image_path = image_info["file_name"]
         image_id = image_info["id"]
@@ -137,13 +139,12 @@ class ReferSegDataset(torch.utils.data.Dataset):
         image = Image.open(image_path)
         image = np.array(image.convert("RGB"))
 
-        questions = []
-        answers = []
+        convs = []
         for text in sampled_classes:
             text = text.strip()
             assert len(text.split("||")) == 1
             question_template = random.choice(self.short_question_list)
-            questions.append(
+            convs.append([
                 {"role": "user",
                  "content": [
                      {
@@ -156,8 +157,16 @@ class ReferSegDataset(torch.utils.data.Dataset):
                          "text": question_template.format(class_name=text.lower()),
                      }]
                  },
-            )
-            answers.append(random.choice(self.answer_list))
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": random.choice(self.answer_list),
+                        }
+                    ]
+                }
+            ])
 
         flag = False
         masks = []
@@ -232,7 +241,6 @@ class ReferSegDataset(torch.utils.data.Dataset):
 
         return (
             image,
-            questions,
-            answers,
+            convs,
             masks,
         )

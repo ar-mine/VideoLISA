@@ -274,8 +274,9 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
 
         output_hidden_states = outputs.hidden_states
         last_hidden_state = output_hidden_states[-1]
-        seg_token_mask = input_ids == self.seg_token_idx
-        pred_embeddings = last_hidden_state[seg_token_mask]
+        seg_token_mask = F.pad(input_ids, (0, 1), mode='constant', value=0) == self.seg_token_idx
+        pred_embeddings = F.pad(last_hidden_state, (0, 0, 1, 0), mode='constant', value=0)[seg_token_mask]
+        # pred_embeddings = last_hidden_state[seg_token_mask]
         seg_token_counts = seg_token_mask.int().sum(-1)  # [bs, ]
         seg_token_offset = seg_token_counts.cumsum(-1)
         seg_token_offset = torch.cat(
@@ -367,7 +368,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         seg_token_ids = torch.where(output_ids == self.seg_token_idx)
         seg_token_hidden_states = []
         for b, i in zip(*seg_token_ids):
-            offset = output_ids.shape[1]-i
+            offset = output_ids.shape[1]-i-1
             seg_token_hidden_states.append(output_hidden_states[-offset][-1])
 
         if len(seg_token_hidden_states) > 0:

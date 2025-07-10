@@ -131,6 +131,7 @@ class ReferSegDataset(torch.utils.data.Dataset):
             )
         else:
             sampled_inds = list(range(len(sents)))
+        # sampled_inds = [0]
         sampled_sents = np.vectorize(sents.__getitem__)(sampled_inds).tolist()
         # sampled_ann_ids = np.vectorize(ann_ids.__getitem__)(sampled_inds).tolist()
         sampled_ann_ids = [ann_ids[ind] for ind in sampled_inds]

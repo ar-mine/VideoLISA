@@ -368,7 +368,7 @@ class VideoLISA(Qwen2_5_VLForConditionalGeneration):
         seg_token_ids = torch.where(output_ids == self.seg_token_idx)
         seg_token_hidden_states = []
         for b, i in zip(*seg_token_ids):
-            offset = output_ids.shape[1]-i-1
+            offset = output_ids.shape[1] - i
             seg_token_hidden_states.append(output_hidden_states[-offset][-1])
 
         if len(seg_token_hidden_states) > 0:

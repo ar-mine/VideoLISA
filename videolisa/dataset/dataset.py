@@ -181,17 +181,23 @@ class DataCollatorForQwen(DataCollatorForSeq2Seq):
             instructions = {key: value.tolist() for key, value in inputs.items()}
             # The labels are the input_ids, and we mask the padding tokens in the loss computation
             labels = inputs["input_ids"].clone()  # Clone input IDs for labels
+
+            if 1:
+                label_mask_idx = torch.where(labels == self.processor.tokenizer.convert_tokens_to_ids('assistant'))
+                for b, i in zip(*label_mask_idx):
+                    labels[b, :i+1] = -100
+            else:
+                # Ignore the image token index in the loss computation (model specific)
+                if isinstance(self.processor, Qwen2_5_VLProcessor):  # Check if the processor is Qwen2VLProcessor
+                    image_tokens = [151652, 151653, 151655]  # Specific image token IDs for Qwen2VLProcessor
+                else:
+                    image_tokens = [self.processor.tokenizer.convert_tokens_to_ids(self.processor.image_token)]  # Convert image token to ID
+
+                # Mask image token IDs in the labels
+                for image_token_id in image_tokens:
+                    labels[labels == image_token_id] = -100  # Mask image token IDs in labels
             labels[labels == self.processor.tokenizer.pad_token_id] = -100  # Mask padding tokens in labels
 
-            # Ignore the image token index in the loss computation (model specific)
-            if isinstance(self.processor, Qwen2_5_VLProcessor):  # Check if the processor is Qwen2VLProcessor
-                image_tokens = [151652, 151653, 151655]  # Specific image token IDs for Qwen2VLProcessor
-            else:
-                image_tokens = [self.processor.tokenizer.convert_tokens_to_ids(self.processor.image_token)]  # Convert image token to ID
-
-            # Mask image token IDs in the labels
-            for image_token_id in image_tokens:
-                labels[labels == image_token_id] = -100  # Mask image token IDs in labels
             # if len(input_ids) > MAX_LENGTH:  # 做一个截断
             #     input_ids = input_ids[:MAX_LENGTH]
             #     attention_mask = attention_mask[:MAX_LENGTH]
